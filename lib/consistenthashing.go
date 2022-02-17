@@ -120,13 +120,16 @@ func (r *Ring) RemoveNode(name string) {
 		r.Nodes.Length--
 		return
 	}
-	cmpNode := r.Nodes.Head.Next
-	for i := 0; i < r.Nodes.Length-1; i++ {
-		if cmpNode.Hash.Cmp(hashedName) == 0 {
-			cmpNode.Prev.Next = cmpNode.Next
-			cmpNode.Next.Prev = cmpNode.Prev
-			break
+	if r.Nodes.Length > 1 {
+		cmpNode := r.Nodes.Head.Next
+		for i := 0; i < r.Nodes.Length-1; i++ {
+			if cmpNode.Hash.Cmp(hashedName) == 0 {
+				cmpNode.Prev.Next = cmpNode.Next
+				cmpNode.Next.Prev = cmpNode.Prev
+				r.Nodes.Length--
+				break
+			}
+			cmpNode = cmpNode.Next
 		}
-		cmpNode = cmpNode.Next
 	}
 }
