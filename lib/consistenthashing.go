@@ -32,8 +32,14 @@ type VirtualNode struct {
 	Prev        *VirtualNode
 }
 
-// hash returns the MD5 hash value of the provided value as *big.Int
-func hash(value string) *big.Int {
+type ReallocationNotice struct {
+	targetNode *VirtualNode
+	newNode    *VirtualNode
+	// the targetNode sends newNode all the keys it has that is >= newNode.Hash
+}
+
+// Hash returns the MD5 hash value of the provided string as *big.Int
+func Hash(value string) *big.Int {
 	data := []byte(value)
 	sum := md5.Sum(data)
 	bi := big.NewInt(0)
@@ -54,7 +60,7 @@ func newVirtualNode(name string, IP string) *VirtualNode {
 	return &VirtualNode{
 		VirtualName: name,
 		NodeIP:      IP,
-		Hash:        hash(name),
+		Hash:        Hash(name),
 	}
 }
 
@@ -78,9 +84,14 @@ func (dll DoublyLinkedList) TraverseAndPrint() string {
 }
 
 // AddNode adds a node to the Ring with given name and IP
-func (r *Ring) AddNode(name string, IP string) {
+// Caller of AddNode function has to handle reallococation of keys.
+// targetNode needs to check for all keys' hash that are >= newNode.Hash
+// and send those key-value pairs to newNode
+func (r *Ring) AddNode(name string, IP string) []ReallocationNotice {
 	ls := make([]*VirtualNode, NUM_VIRTUAL_NODES)
+	reAlloc := make([]ReallocationNotice, 0)
 
+	isEmptyBefore := r.Nodes.Length == 0
 	for i := 0; i < NUM_VIRTUAL_NODES; i++ {
 		vName := fmt.Sprintf("%s_%d", name, i)
 		vNode := newVirtualNode(vName, IP)
@@ -124,58 +135,71 @@ func (r *Ring) AddNode(name string, IP string) {
 					vNode.Prev = cmpNode
 				}
 			}
-			// TODO: redistribution
-			/*
-				inform prevNode of node's addition, tell prevNode node.Hash
-				prevNodes needs to check for all keys' hash that are >= node.Hash
-				and send those key-value pairs to node
-			*/
+
+			// reallocation
+			if !isEmptyBefore {
+				var target *VirtualNode
+				if vNode.Prev == nil {
+					// prev is tail
+					target = vNode.Next
+					for target.Next != nil {
+						target = target.Next
+					}
+				} else {
+					target = vNode.Prev
+				}
+				if target.NodeIP == vNode.NodeIP {
+					continue
+				}
+				reAlloc = append(reAlloc, ReallocationNotice{
+					targetNode: target,
+					newNode:    vNode,
+				})
+			}
 		}
 	}
 	r.NodeMap[name] = newNodeInfo(IP, ls)
+	return reAlloc
 }
 
-// SearchKey returns the Node that is expected to store that key
+// SearchKey returns the first Node that is expected to store that key
 func (r *Ring) SearchKey(key string) VirtualNode {
-	hashedKey := hash(key)
+	hashedKey := Hash(key)
 	node := r.Nodes.Head
-	for {
+	for node.Next != nil {
 		if node.Hash.Cmp(hashedKey) == -1 {
 			node = node.Next
 		} else {
-			return *node.Prev
+			break
 		}
 	}
+	if node.Prev == nil {
+		// return tail
+		for node.Next != nil {
+			node = node.Next
+		}
+		return *node
+	}
+	return *node.Prev
 }
 
 // RemoveNode removes the node with the provided name
+// Reallocation of keys needs to be handled by caller
 func (r *Ring) RemoveNode(name string) {
-	// TODO incorporate virtual nodes
-	if r.Nodes.Length == 0 {
+	node, prs := r.NodeMap[name]
+	if !prs {
 		return
 	}
-	hashedName := hash(name)
-	if r.Nodes.Head.Hash.Cmp(hashedName) == 0 {
-		if r.Nodes.Length == 1 {
-			r.Nodes.Head = nil
-		} else {
-			r.Nodes.Head.Next.Prev = r.Nodes.Head.Prev
-			r.Nodes.Head.Prev.Next = r.Nodes.Head.Next
-			r.Nodes.Head = r.Nodes.Head.Next
+	for _, vNode := range node.VirtualNodes {
+		if vNode.Prev != nil {
+			vNode.Prev.Next = vNode.Next
+		} else if vNode == r.Nodes.Head {
+			r.Nodes.Head = vNode.Next
+		}
+		if vNode.Next != nil {
+			vNode.Next.Prev = vNode.Prev
 		}
 		r.Nodes.Length--
-		return
 	}
-	if r.Nodes.Length > 1 {
-		cmpNode := r.Nodes.Head.Next
-		for i := 0; i < r.Nodes.Length-1; i++ {
-			if cmpNode.Hash.Cmp(hashedName) == 0 {
-				cmpNode.Prev.Next = cmpNode.Next
-				cmpNode.Next.Prev = cmpNode.Prev
-				r.Nodes.Length--
-				break
-			}
-			cmpNode = cmpNode.Next
-		}
-	}
+	delete(r.NodeMap, name)
 }
