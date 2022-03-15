@@ -1,1 +1,4 @@
 .vscode/
+mongodata/
+dsc-dynamo/tmp/
+.env

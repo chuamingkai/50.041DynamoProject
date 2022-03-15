@@ -3,8 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
+	"os"
 	"time"
 
+	"github.com/joho/godotenv"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -58,7 +61,14 @@ func insertMany(client *mongo.Client, ctx context.Context, dataBase, col string,
 }
 
 func main() {
-	client, ctx, cancel, err := connect("mongodb+srv://pw:b6O6Uoe62He5R766@cluster0.8apga.mongodb.net/myFirstDatabase?retryWrites=true&w=majority")
+	// load .env file
+	err := godotenv.Load(".env")
+	if (err != nil) {
+		log.Panicf("Some error occured. Err: %s", err)
+	}
+	conString := os.Getenv("MONGODB_URI")
+	fmt.Printf("Connection string: %s\n", conString)
+	client, ctx, cancel, err := connect(conString)
 
 	if err != nil {
 		panic(err)
