@@ -1,95 +1,98 @@
 package main
 
 import (
-	"context"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
-	"os"
-	"time"
+	"net/http"
 
-	"github.com/joho/godotenv"
-	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
-	//"github.com/DistributedClocks/GoVector/govec/vclock"
+	"github.com/DistributedClocks/GoVector/govec/vclock"
+	"github.com/gorilla/mux"
 )
 
-type Context struct {
-	//vectorClock      vclock.VClock
-	isConflicting    bool   `bson:"isConflicting,omitempty"`
-	writeCoordinator string `bson:"writeCoordinator,omitempty"`
-}
-
 type Object struct {
-	ID         primitive.ObjectID `bson:"_id,omitempty"`
-	Objectname string             `bson:"objectname,omitempty"`
-	Objectcont string             `bson:"objectcontent,omitempty"`
+	IC     string            `json:"ic"`
+	GeoLoc string            `json:"geoloc"`
+	VC     map[string]uint64 `json:",omitempty"`
 }
 
-func close(client *mongo.Client, ctx context.Context,
-	cancel context.CancelFunc) {
+/*Temporary variable*/
+var Entries []Object
 
-	defer cancel()
+/*wrapper function to increase vector clock value of a particular index by 1*/
+/*i.e. vc1={"A":1}, update("B",vc1)={"A":1,"B":1}*/
+func update(index string, orig vclock.VClock) vclock.VClock {
+	updated := orig.Copy()
+	old, check := updated.FindTicks(index)
+	if !check {
+		updated.Set(index, 1)
+	} else {
+		updated.Set(index, old+1)
+	}
+	return updated.Copy()
+}
 
-	defer func() {
-		if err := client.Disconnect(ctx); err != nil {
-			panic(err)
+func getPreferenceList(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, "Preference List")
+
+}
+
+func returnAllEntries(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(Entries)
+}
+
+func createNewEntry(w http.ResponseWriter, r *http.Request) {
+
+	reqBody, _ := ioutil.ReadAll(r.Body)
+	var newentry Object
+	json.Unmarshal(reqBody, &newentry)
+
+	Entries = append(Entries, newentry)
+
+	json.NewEncoder(w).Encode(newentry)
+}
+
+func returnSingleEntry(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	key := vars["ic"]
+
+	for _, entry := range Entries {
+		if entry.IC == key {
+			json.NewEncoder(w).Encode(entry)
 		}
-	}()
+	}
 }
 
-func connect(uri string) (*mongo.Client, context.Context, context.CancelFunc, error) {
+func handleRequests() {
+	/*creates a new instance of a mux router*/
+	myRouter := mux.NewRouter().StrictSlash(true)
 
-	ctx, cancel := context.WithTimeout(context.Background(),
-		30*time.Second)
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI(uri))
-	return client, ctx, cancel, err
-}
+	/*get preference list*/
+	myRouter.HandleFunc("/", getPreferenceList)
 
-func insertOne(client *mongo.Client, ctx context.Context, dataBase, col string, doc interface{}) (*mongo.InsertOneResult, error) {
-	collection := client.Database(dataBase).Collection(col)
-	result, err := collection.InsertOne(ctx, doc)
-	return result, err
-}
+	/*write new entry*/
 
-func insertMany(client *mongo.Client, ctx context.Context, dataBase, col string, docs []interface{}) (*mongo.InsertManyResult, error) {
+	myRouter.HandleFunc("/data", createNewEntry).Methods("POST")
 
-	collection := client.Database(dataBase).Collection(col)
+	/*get all entries*/
+	myRouter.HandleFunc("/data", returnAllEntries)
 
-	result, err := collection.InsertMany(ctx, docs)
-	return result, err
+	/*return single entry*/
+	myRouter.HandleFunc("/data/{ic}", returnSingleEntry)
+
+	log.Fatal(http.ListenAndServe(":8080", myRouter))
 }
 
 func main() {
-	// load .env file
-	err := godotenv.Load(".env")
-	if (err != nil) {
-		log.Panicf("Some error occured. Err: %s", err)
-	}
-	conString := os.Getenv("MONGODB_URI")
-	fmt.Printf("Connection string: %s\n", conString)
-	client, ctx, cancel, err := connect(conString)
-
-	if err != nil {
-		panic(err)
+	vc1 := vclock.New()
+	vc1.Set("A", 1)
+	vc2 := update("B", vc1)
+	Entries = []Object{
+		Object{IC: "A12345678A", GeoLoc: "somewhere2", VC: vc1.GetMap()},
+		Object{IC: "S12345678A", GeoLoc: "somewhere1", VC: vc2.GetMap()},
 	}
 
-	defer close(client, ctx, cancel)
-
-	object := Object{
-		Objectname: "S1234567A",
-		Objectcont: "23:23:23:23 NW",
-	}
-
-	//test insert
-	insertOneResult, err := insertOne(client, ctx, "nodes", "node1", object)
-
-	// handle the error
-	if err != nil {
-		panic(err)
-	}
-
-	fmt.Println("Result of InsertOne")
-	fmt.Println(insertOneResult.InsertedID)
+	handleRequests()
 
 }
