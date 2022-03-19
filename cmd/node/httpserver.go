@@ -41,8 +41,12 @@ func createSingleEntry(w http.ResponseWriter, r *http.Request) {
 	reqBody, _ := ioutil.ReadAll(r.Body)
 	var newentry models.Object
 	json.Unmarshal(reqBody, &newentry)
+	if newentry.VC != nil {
+		newentry.VC = updaterecv("A", newentry.VC)
+	} else {
+		newentry.VC = updaterecv("A", map[string]uint64{"A": 0})
+	}
 
-	newentry.VC = updaterecv("A", newentry.VC)
 	/*To add ignore if new updated vector clock is outdated?*/
 
 	// Insert test value into bucket
