@@ -1,4 +1,2 @@
 .vscode/
-mongodata/
-dsc-dynamo/tmp/
-.env
+store/
