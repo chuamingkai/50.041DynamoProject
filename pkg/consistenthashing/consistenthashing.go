@@ -5,9 +5,11 @@ import (
 	"crypto/md5"
 	"fmt"
 	"math/big"
+	"strings"
 )
 
-const NUM_VIRTUAL_NODES int = 3 // TODO: probably slap this in some config file later
+const NUM_VIRTUAL_NODES int = 3  // TODO: probably slap this in some config file later
+const REPLICATION_FACTOR int = 3 // TODO: also slap this is some config file
 
 type Ring struct {
 	Nodes   *DoublyLinkedList
@@ -162,7 +164,7 @@ func (r *Ring) AddNode(name string, IP string) []ReallocationNotice {
 	return reAlloc
 }
 
-// SearchKey returns the first Node that is expected to store that key
+// SearchKey returns the first (coordinator) Node that is expected to store that key
 func (r *Ring) SearchKey(key string) VirtualNode {
 	hashedKey := Hash(key)
 	node := r.Nodes.Head
@@ -181,6 +183,44 @@ func (r *Ring) SearchKey(key string) VirtualNode {
 		return *node
 	}
 	return *node.Prev
+}
+
+// GetPreferenceList returns the preference list for key
+func (r *Ring) GetPreferenceList(key string) []VirtualNode {
+	prefList := make([]VirtualNode, 0)
+	node := r.SearchKey(key)
+	prefList = append(prefList, node)
+	num_replicate_possible := REPLICATION_FACTOR
+	if len(r.NodeMap) < REPLICATION_FACTOR {
+		num_replicate_possible = len(r.NodeMap)
+	}
+	for i := 0; i < num_replicate_possible-1; i++ {
+		if node.Next == nil {
+			node = *r.Nodes.Head
+		} else {
+			node = *node.Next
+		}
+		for _, n := range prefList {
+			if node.NodeIP == n.NodeIP {
+				i--
+				continue
+			}
+		}
+		prefList = append(prefList, node)
+	}
+	return prefList
+}
+
+// IsNodeResponsibleForKey returns true if the physical node is in
+// the preference list for that key
+func (r *Ring) IsNodeResponsibleForKey(key string, name string) bool {
+	prefList := r.GetPreferenceList(key)
+	for _, n := range prefList {
+		if strings.HasPrefix(n.VirtualName, name) {
+			return true
+		}
+	}
+	return false
 }
 
 // RemoveNode removes the node with the provided name
