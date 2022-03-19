@@ -27,10 +27,10 @@ func (db *DB) CreateBucket(bucketName string) error {
 }
 
 // Insert into bucket
-func (db *DB) Put(bucketName string, entry models.Entry) error {
+func (db *DB) Put(bucketName string, object models.Object) error {
 	return db.DB.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketName))
-		err := b.Put([]byte(entry.NRIC), []byte(entry.Location))
+		err := b.Put([]byte(object.Key), []byte(object.Value))
 		return err
 	})
 }

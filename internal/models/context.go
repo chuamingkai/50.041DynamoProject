@@ -1,7 +1,9 @@
 package models
 
+// import "github.com/chuamingkai/50.041DynamoProject/pkg/vectorclock"
+
 type Context struct {
-	//vectorClock      vclock.VClock
-	isConflicting    bool   `bson:"isConflicting,omitempty"`
-	writeCoordinator string `bson:"writeCoordinator,omitempty"`
+	// VC 					vectorclock.VectorClock `bson:"vectorClock,omitempty"`
+	IsConflicting    	bool   					`bson:"isConflicting,omitempty"`
+	WriteCoordinator 	string 					`bson:"writeCoordinator,omitempty"`
 }

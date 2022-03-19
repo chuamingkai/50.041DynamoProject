@@ -11,9 +11,9 @@ import (
 func main() {
 	id := 55 // TODO: Dynamically assign node IDs
 
-	testEntry := models.Entry{
-		NRIC: "S1234567A",
-		Location: "23:23:23:23 NW",
+	testEntry := models.Object{
+		Key: "S1234567A",
+		Value: "23:23:23:23 NW",
 	}
 
 	// Open database
@@ -36,6 +36,6 @@ func main() {
 	}
 
 	// Read from bucket
-	value := db.Get("testBucket", testEntry.NRIC)
-	fmt.Printf("Value at key %s: %s", testEntry.NRIC, value)
+	value := db.Get("testBucket", testEntry.Key)
+	fmt.Printf("Value at key %s: %s", testEntry.Key, value)
 }
