@@ -1,0 +1,28 @@
+# Consistent Hashing Ring
+
+## Ring Struct
+- holds the doubly-linked list of virtual nodes
+- holds a map of node name to the virtual nodes it is responsible for (NodeInfo struct)
+- functions:
+    - AddNode(name, portnum): adds a node to the Ring with the given name and portnum. Returns a slice of ReallocationNotice (see below) for the caller to handle reallocation
+    - SearchKey(key): returns the first (coordinator) Node that is expected to store that key
+    - GetPreferenceList(key): returns the preference list for key; calls SearchKey internally
+    - IsNodeResponsibleForKey(key, name) returns true if the physical node is in the preference list for that key; calls GetPreferenceList internally
+    - RemoveNode(name): removes the node with the provided name. The caller is expected to have handled the reallocation of keys before calling this function. The node being removed has to pass all its keys to its previous (virtual) node.
+
+
+## Doubly-linked list and VirtualNode
+- the virtual nodes of a physical node is determined by appending the node name with a number
+    - eg if the number of virtual nodes is set to 3, then a physical node with name "A" will have 3 virtual nodes with names "A_0", "A_1", "A_2"
+    - these names are the VirtualName of the virtual node. The Hash is calculated based on this VirtualName
+- each VirtualNode object is an entry in the doubly-linked list
+    - it stores the Hash of the virtual name to avoid needing recomputation
+- the doubly-linked list keeps track of the head of the list and the total length of the list
+- functions: TraverseAndPrint() returns a string representation of the linked list; mainly for debug purposes
+
+## Reallocation
+- ReallocationNotice struct captures the nodes involved in reallocation
+- targetNode is the node that has to sends its keys
+- newNode is the node that receives its keys
+- targetNode sends newNode all of the keys it has that is >= newNode.Hash (ie Hash(key).Cmp(newNode.Hash) >= 0)
+
