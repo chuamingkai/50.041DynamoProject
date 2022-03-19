@@ -45,7 +45,7 @@ func testRingIntegrity(r *Ring) bool {
 func TestSingleAdd(t *testing.T) {
 	name := "A"
 	a := NewRing()
-	a.AddNode(name, "10.0.9.1")
+	a.AddNode(name, 8000)
 	if !testRingIntegrity(a) {
 		t.Error("Failed ring integrity check")
 	}
@@ -84,7 +84,7 @@ func TestSingleAdd(t *testing.T) {
 
 func TestMultipleAdd(t *testing.T) {
 	names := []string{"A", "B", "C", "D"}
-	ip := []string{"10.0.9.1", "10.0.9.2", "10.0.9.3", "10.0.9.4"}
+	ip := []uint64{8000, 8001, 8002, 8003}
 	a := NewRing()
 	dRing := debugRing{}
 
@@ -128,7 +128,7 @@ func TestMultipleAdd(t *testing.T) {
 func TestSingleAddAndDelete(t *testing.T) {
 	name := "A"
 	a := NewRing()
-	a.AddNode(name, "10.0.9.1")
+	a.AddNode(name, 8000)
 	if !testRingIntegrity(a) {
 		t.Error("Failed ring integrity check")
 	}
@@ -178,7 +178,7 @@ func TestSingleAddAndDelete(t *testing.T) {
 
 func TestMultipleAddAndDelete(t *testing.T) {
 	names := []string{"A", "B"}
-	ip := []string{"10.0.9.1", "10.0.9.2"}
+	ip := []uint64{8000, 8001}
 	a := NewRing()
 	dRing := debugRing{}
 
@@ -269,7 +269,7 @@ func TestMultipleAddAndDelete(t *testing.T) {
 func TestFindingKeys(t *testing.T) {
 	keys := []string{"abc", "fdsafd", "hello", "1232187"}
 	names := []string{"A", "B"}
-	ip := []string{"10.0.9.1", "10.0.9.2"}
+	ip := []uint64{8000, 8001}
 	a := NewRing()
 	dRing := debugRing{}
 

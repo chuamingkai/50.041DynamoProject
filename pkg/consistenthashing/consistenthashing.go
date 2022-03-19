@@ -22,13 +22,13 @@ type DoublyLinkedList struct {
 }
 
 type NodeInfo struct {
-	NodeIP       string
+	NodeId       uint64
 	VirtualNodes []*VirtualNode
 }
 
 type VirtualNode struct {
 	VirtualName string
-	NodeIP      string
+	NodeId      uint64
 	Hash        *big.Int
 	Next        *VirtualNode
 	Prev        *VirtualNode
@@ -58,17 +58,17 @@ func NewRing() *Ring {
 	return &Ring{&dll, nodeMap}
 }
 
-func newVirtualNode(name string, IP string) *VirtualNode {
+func newVirtualNode(name string, portnum uint64) *VirtualNode {
 	return &VirtualNode{
 		VirtualName: name,
-		NodeIP:      IP,
+		NodeId:      portnum,
 		Hash:        Hash(name),
 	}
 }
 
-func newNodeInfo(IP string, ls []*VirtualNode) NodeInfo {
+func newNodeInfo(portnum uint64, ls []*VirtualNode) NodeInfo {
 	return NodeInfo{
-		NodeIP:       IP,
+		NodeId:       portnum,
 		VirtualNodes: ls,
 	}
 }
@@ -79,24 +79,24 @@ func (dll DoublyLinkedList) TraverseAndPrint() string {
 	output.WriteString(fmt.Sprintf("Linked list of length: %d\n", dll.Length))
 	node := dll.Head
 	for i := 0; i < dll.Length; i++ {
-		output.WriteString(fmt.Sprintf("[%s@%s] %s\n", node.VirtualName, node.NodeIP, node.Hash))
+		output.WriteString(fmt.Sprintf("[%s@%d] %s\n", node.VirtualName, node.NodeId, node.Hash))
 		node = node.Next
 	}
 	return output.String()
 }
 
-// AddNode adds a node to the Ring with given name and IP
+// AddNode adds a node to the Ring with given name and portnum
 // Caller of AddNode function has to handle reallococation of keys.
 // targetNode needs to check for all keys' hash that are >= newNode.Hash
 // and send those key-value pairs to newNode
-func (r *Ring) AddNode(name string, IP string) []ReallocationNotice {
+func (r *Ring) AddNode(name string, portnum uint64) []ReallocationNotice {
 	ls := make([]*VirtualNode, NUM_VIRTUAL_NODES)
 	reAlloc := make([]ReallocationNotice, 0)
 
 	isEmptyBefore := r.Nodes.Length == 0
 	for i := 0; i < NUM_VIRTUAL_NODES; i++ {
 		vName := fmt.Sprintf("%s_%d", name, i)
-		vNode := newVirtualNode(vName, IP)
+		vNode := newVirtualNode(vName, portnum)
 		ls[i] = vNode
 		r.Nodes.Length++
 		if r.Nodes.Length == 1 {
@@ -150,7 +150,7 @@ func (r *Ring) AddNode(name string, IP string) []ReallocationNotice {
 				} else {
 					target = vNode.Prev
 				}
-				if target.NodeIP == vNode.NodeIP {
+				if target.NodeId == vNode.NodeId {
 					continue
 				}
 				reAlloc = append(reAlloc, ReallocationNotice{
@@ -160,7 +160,7 @@ func (r *Ring) AddNode(name string, IP string) []ReallocationNotice {
 			}
 		}
 	}
-	r.NodeMap[name] = newNodeInfo(IP, ls)
+	r.NodeMap[name] = newNodeInfo(portnum, ls)
 	return reAlloc
 }
 
@@ -201,7 +201,7 @@ func (r *Ring) GetPreferenceList(key string) []VirtualNode {
 			node = *node.Next
 		}
 		for _, n := range prefList {
-			if node.NodeIP == n.NodeIP {
+			if node.NodeId == n.NodeId {
 				i--
 				continue
 			}
