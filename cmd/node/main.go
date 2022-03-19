@@ -1,4 +1,4 @@
-package main
+/*package main
 
 import (
 	"fmt"
@@ -38,4 +38,4 @@ func main() {
 	// Read from bucket
 	value := db.Get("testBucket", testEntry.Key)
 	fmt.Printf("Value at key %s: %s", testEntry.Key, value)
-}
+}*/

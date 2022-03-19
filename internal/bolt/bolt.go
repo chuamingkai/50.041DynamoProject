@@ -1,6 +1,7 @@
 package bolt
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/chuamingkai/50.041DynamoProject/internal/models"
@@ -13,7 +14,7 @@ type DB struct {
 
 // Setup database
 func ConnectDB(id int) (DB, error) {
-	dbName := fmt.Sprintf("store/node%vstore.db", id)
+	dbName := fmt.Sprintf("node%vstore.db", id)
 	db, err := bolt.Open(dbName, 0600, nil)
 	return DB{DB: db}, err
 }
@@ -30,20 +31,29 @@ func (db *DB) CreateBucket(bucketName string) error {
 func (db *DB) Put(bucketName string, object models.Object) error {
 	return db.DB.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketName))
-		err := b.Put([]byte(object.Key), []byte(object.Value))
+		newentry, err := json.Marshal(object)
+
+		b.Put([]byte(object.IC), newentry)
 		return err
 	})
 }
 
 // Read value at key in bucket
-func (db *DB) Get(bucketName, key string) string {
-	value := make([]byte, 50)
+func (db *DB) Get(bucketName, key string) models.Object {
+	value := make([]byte, 1000)
+	var newupd models.Object
 
 	db.DB.View(func(tx *bolt.Tx) error {
+
 		b := tx.Bucket([]byte(bucketName))
 		copy(value, b.Get([]byte(key)))
+		err := json.Unmarshal(b.Get([]byte(key)), &newupd)
+		if err == nil {
+			return nil
+		}
 		return nil
 	})
 
-	return string(value)
+	return newupd
+
 }
