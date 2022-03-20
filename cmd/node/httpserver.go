@@ -118,34 +118,23 @@ func createServer(port int) *http.Server {
 
 func main() {
 	wg := new(sync.WaitGroup)
-	wg.Add(4)
-	// Open database
-	go func() {
-		db, err := bolt.ConnectDB(9000)
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer db.DB.Close()
+	wg.Add(2)
+	/*
+		//If database not created before
+		go func() {
+			db, err := bolt.ConnectDB(9000)
+			if err != nil {
+				log.Fatal(err)
+			}
+			defer db.DB.Close()
 
-		// Create bucket
-		err = db.CreateBucket("testBucket")
-		if err != nil {
-			log.Fatalf("Error creating bucket: %s", err)
-		}
-	}()
-	go func() {
-		db, err := bolt.ConnectDB(9022)
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer db.DB.Close()
-
-		// Create bucket
-		err = db.CreateBucket("testBucket")
-		if err != nil {
-			log.Fatalf("Error creating bucket: %s", err)
-		}
-	}()
+			// Create bucket
+			err = db.CreateBucket("testBucket")
+			if err != nil {
+				log.Fatalf("Error creating bucket: %s", err)
+			}
+		}()
+	*/
 
 	go func() {
 		server := createServer(9000)
