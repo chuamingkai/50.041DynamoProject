@@ -6,6 +6,8 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/chuamingkai/50.041DynamoProject/internal/bolt"
@@ -29,10 +31,13 @@ func updaterecv(index string, orig map[string]uint64) map[string]uint64 {
 }
 
 func createSingleEntry(w http.ResponseWriter, r *http.Request) {
+
 	/*To add check for if node handles key*/
+	nodename := strings.Trim(r.Host, "localhost:")
+	id, err := strconv.Atoi(nodename)
 
 	// Open database
-	db, err := bolt.ConnectDB(6060)
+	db, err := bolt.ConnectDB(id)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -42,9 +47,9 @@ func createSingleEntry(w http.ResponseWriter, r *http.Request) {
 	var newentry models.Object
 	json.Unmarshal(reqBody, &newentry)
 	if newentry.VC != nil {
-		newentry.VC = updaterecv("A", newentry.VC)
+		newentry.VC = updaterecv(nodename, newentry.VC)
 	} else {
-		newentry.VC = updaterecv("A", map[string]uint64{"A": 0})
+		newentry.VC = updaterecv(nodename, map[string]uint64{nodename: 0})
 	}
 
 	/*To add ignore if new updated vector clock is outdated?*/
@@ -64,14 +69,17 @@ func createSingleEntry(w http.ResponseWriter, r *http.Request) {
 }
 
 func returnSingleEntry(w http.ResponseWriter, r *http.Request) {
+
 	/*To add check for if node handles key*/
+	nodename := strings.Trim(r.Host, "localhost:")
+	id, err := strconv.Atoi(nodename)
 
 	vars := mux.Vars(r)
 	key := vars["ic"]
 	fmt.Println(key)
 
 	// Open database
-	db, err := bolt.ConnectDB(6060)
+	db, err := bolt.ConnectDB(id)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -110,10 +118,23 @@ func createServer(port int) *http.Server {
 
 func main() {
 	wg := new(sync.WaitGroup)
-	wg.Add(3)
+	wg.Add(4)
 	// Open database
 	go func() {
-		db, err := bolt.ConnectDB(6060)
+		db, err := bolt.ConnectDB(9000)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer db.DB.Close()
+
+		// Create bucket
+		err = db.CreateBucket("testBucket")
+		if err != nil {
+			log.Fatalf("Error creating bucket: %s", err)
+		}
+	}()
+	go func() {
+		db, err := bolt.ConnectDB(9022)
 		if err != nil {
 			log.Fatal(err)
 		}
