@@ -6,10 +6,12 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/chuamingkai/50.041DynamoProject/internal/bolt"
 	"github.com/chuamingkai/50.041DynamoProject/internal/models"
+	consistenthash "github.com/chuamingkai/50.041DynamoProject/pkg/consistenthashing"
 	"github.com/chuamingkai/50.041DynamoProject/pkg/vectorclock"
 
 	"github.com/gorilla/mux"
@@ -17,11 +19,16 @@ import (
 
 var db bolt.DB
 
+type UpdateNode struct {
+	NodeName string `json:"nodename"`
+}
+
+var a *consistenthash.Ring
+
 func createSingleEntry(w http.ResponseWriter, r *http.Request) {
 
 	/*To add check for if node handles key*/
 	nodename := strings.Trim(r.Host, "localhost:")
-	// id, _ := strconv.Atoi(nodename)
 
 	reqBody, _ := ioutil.ReadAll(r.Body)
 	var data map[string]string
@@ -35,6 +42,12 @@ func createSingleEntry(w http.ResponseWriter, r *http.Request) {
 		newEntry.Value = v
 	}
 
+	number, err := strconv.ParseUint(nodename, 10, 64)
+	if !a.IsNodeResponsibleForKey(newEntry.Key, number) {
+		http.Error(w, "Node is not responsible for key!", 400)
+		return
+	}
+
 	if newEntry.VC != nil {
 		newEntry.VC = vectorclock.UpdateRecv(nodename, newEntry.VC)
 	} else {
@@ -44,7 +57,7 @@ func createSingleEntry(w http.ResponseWriter, r *http.Request) {
 	/*To add ignore if new updated vector clock is outdated?*/
 
 	// Insert test value into bucket
-	err := db.Put("testBucket", newEntry)
+	err = db.Put("testBucket", newEntry)
 	if err != nil {
 		log.Fatalf("Error inserting into bucket: %s", err)
 	}
@@ -57,13 +70,19 @@ func createSingleEntry(w http.ResponseWriter, r *http.Request) {
 }
 
 func returnSingleEntry(w http.ResponseWriter, r *http.Request) {
-	/*To add check for if node handles key*/
-	// nodename := strings.Trim(r.Host, "localhost:")
-	// id, _ := strconv.Atoi(nodename)
+	// Check if node handles key
+	nodename := strings.Trim(r.Host, "localhost:")
+	number, _ := strconv.ParseUint(nodename, 10, 64)
 
 	vars := mux.Vars(r)
 	key := vars["ic"]
-	fmt.Println("Finding value at key", key)
+
+	if !a.IsNodeResponsibleForKey(key, number) {
+		http.Error(w, "Node is not responsible for key!", 400)
+		return
+	}
+	// id, err := strconv.Atoi(nodename)
+	fmt.Println(a.GetPreferenceList(key))
 
 	// Read from bucket
 	value, err := db.Get("testBucket", key)
@@ -75,11 +94,61 @@ func returnSingleEntry(w http.ResponseWriter, r *http.Request) {
 	/*collate conflicting list*/
 
 	/*Edit to return a list of objects instead*/
-	json.NewEncoder(w).Encode(value)
+	if value.Key != "" {
+		json.NewEncoder(w).Encode(value)
+	} else {
+		http.Error(w, "Value not found!", 404)
+	}
 
 }
 
-func CreateServer(port int) *http.Server {
+func updateAddNode(w http.ResponseWriter, r *http.Request) {
+	reqBody, _ := ioutil.ReadAll(r.Body)
+
+	var newnode UpdateNode
+	json.Unmarshal(reqBody, &newnode)
+	exist := false
+	number, err := strconv.ParseUint(newnode.NodeName, 10, 64)
+	if err == nil {
+		for _, n := range a.NodeMap {
+			if n.NodeId == number {
+				exist = true
+			}
+		}
+		if !exist {
+			a.AddNode(newnode.NodeName, number)
+			fmt.Println(a.Nodes.TraverseAndPrint())
+		} else {
+			http.Error(w, "Node already exists!", 503)
+		}
+	}
+	json.NewEncoder(w).Encode(newnode)
+}
+
+func updateDelNode(w http.ResponseWriter, r *http.Request) {
+	reqBody, _ := ioutil.ReadAll(r.Body)
+
+	var newnode UpdateNode
+	json.Unmarshal(reqBody, &newnode)
+	exist := false
+	number, err := strconv.ParseUint(newnode.NodeName, 10, 64)
+	if err == nil {
+		for _, n := range a.NodeMap {
+			if n.NodeId == number {
+				exist = true
+			}
+		}
+		if exist {
+			a.RemoveNode(newnode.NodeName)
+			fmt.Println(a.Nodes.TraverseAndPrint())
+		} else {
+			http.Error(w, "Node doesn't exists!", 503)
+		}
+	}
+	json.NewEncoder(w).Encode(newnode)
+}
+
+func CreateServer(port int, newRing *consistenthash.Ring) *http.Server {
 	fmt.Println("Setting up node at port", port)
 	var err error
 
@@ -90,6 +159,9 @@ func CreateServer(port int) *http.Server {
 	}
 	// defer db.DB.Close()
 
+	// Add ring
+	a = newRing
+
 	// Create bucket
 	err = db.CreateBucket("testBucket")
 	if err != nil {
@@ -98,6 +170,9 @@ func CreateServer(port int) *http.Server {
 
 	/*creates a new instance of a mux router*/
 	myRouter := mux.NewRouter().StrictSlash(true)
+
+	myRouter.HandleFunc("/addnode", updateAddNode).Methods("POST")
+	myRouter.HandleFunc("/delnode", updateDelNode).Methods("POST")
 
 	/*write new entry*/
 	myRouter.HandleFunc("/data", createSingleEntry).Methods("POST")

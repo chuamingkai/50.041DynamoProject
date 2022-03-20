@@ -7,8 +7,9 @@ import (
 	"github.com/chuamingkai/50.041DynamoProject/internal/models"
 )
 
+// TODO: Replace this with the node manager initialisation code
 func main() {
-	id := 55 // TODO: Dynamically assign node IDs
+	id := 55
 
 	testEntry := models.Object{
 		Key: "S1234567A",
