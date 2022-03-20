@@ -1,0 +1,39 @@
+// protoc --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative grpc.proto
+
+syntax = "proto3";
+option go_package = "github.com/chuamingkai/50.041DynamoProject/pkg/grpc";
+
+service Replication {
+    rpc PutReplica (PutRepRequest) returns (PutRepResponse);
+    rpc GetReplica (GetRepRequest) returns (GetRepResponse);
+}
+
+message VectorClock {
+    map<int64, int64> vc = 1;
+    int64 nodeID = 2;
+}
+
+message VersionedData {
+    bytes data = 1;
+    VectorClock version = 2;
+}
+
+message PutRepRequest {
+    bytes key = 1;
+    VersionedData data = 2;
+    VectorClock vectorClock = 3;
+}
+
+message PutRepResponse {
+    VectorClock vectorClock = 1;
+}
+
+message GetRepRequest {
+    bytes key = 1;
+    VectorClock vectorClock = 2;
+}
+
+message GetRepResponse {
+    VersionedData data = 1;
+    VectorClock vectorClock = 2;
+}

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 
 	"github.com/chuamingkai/50.041DynamoProject/internal/bolt"
@@ -36,6 +35,6 @@ func main() {
 	}
 
 	// Read from bucket
-	value := db.Get("testBucket", testEntry.Key)
-	fmt.Printf("Value at key %s: %s", testEntry.Key, value)
+	// getResult := db.Get("testBucket", testEntry.Key)
+	// fmt.Println(getResult)
 }

@@ -1,120 +1,125 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
-	"log"
-	"net/http"
-	"strconv"
-	"strings"
 	"sync"
 
-	"github.com/chuamingkai/50.041DynamoProject/internal/bolt"
-	"github.com/chuamingkai/50.041DynamoProject/internal/models"
-
-	"github.com/DistributedClocks/GoVector/govec/vclock"
-	"github.com/gorilla/mux"
+	"github.com/chuamingkai/50.041DynamoProject/internal/nodes"
 )
 
 /*wrapper function to increase vector clock value of a particular index by 1*/
 /*i.e. vc1={"A":1}, update("B",vc1)={"A":1,"B":1}*/
-func updaterecv(index string, orig map[string]uint64) map[string]uint64 {
-	updated := vclock.New().CopyFromMap(orig)
-	old, check := updated.FindTicks(index)
-	if !check {
-		updated.Set(index, 1)
-	} else {
-		updated.Set(index, old+1)
-	}
-	return updated.GetMap()
-}
+// func updaterecv(index string, orig map[string]uint64) map[string]uint64 {
+// 	updated := vclock.New().CopyFromMap(orig)
+// 	old, check := updated.FindTicks(index)
+// 	if !check {
+// 		updated.Set(index, 1)
+// 	} else {
+// 		updated.Set(index, old+1)
+// 	}
+// 	return updated.GetMap()
+// }
 
-func createSingleEntry(w http.ResponseWriter, r *http.Request) {
+// // TODO: Move these into a different folder, modify the db writing code
+// func createSingleEntry(w http.ResponseWriter, r *http.Request) {
 
-	/*To add check for if node handles key*/
-	nodename := strings.Trim(r.Host, "localhost:")
-	id, err := strconv.Atoi(nodename)
+// 	/*To add check for if node handles key*/
+// 	nodename := strings.Trim(r.Host, "localhost:")
+// 	id, _ := strconv.Atoi(nodename)
 
-	// Open database
-	db, err := bolt.ConnectDB(id)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer db.DB.Close()
+// 	// Open database
+// 	db, err := bolt.ConnectDB(id)
+// 	if err != nil {
+// 		log.Fatal(err)
+// 	}
+// 	defer db.DB.Close()
 
-	reqBody, _ := ioutil.ReadAll(r.Body)
-	var newentry models.Object
-	json.Unmarshal(reqBody, &newentry)
-	if newentry.VC != nil {
-		newentry.VC = updaterecv(nodename, newentry.VC)
-	} else {
-		newentry.VC = updaterecv(nodename, map[string]uint64{nodename: 0})
-	}
+// 	// Create bucket
+// 	db.CreateBucket("testBucket")
 
-	/*To add ignore if new updated vector clock is outdated?*/
+// 	reqBody, _ := ioutil.ReadAll(r.Body)
+// 	var data map[string]string
+// 	json.Unmarshal(reqBody, &data)
+// 	fmt.Println(data)
 
-	// Insert test value into bucket
-	err = db.Put("testBucket", newentry)
-	if err != nil {
-		log.Fatalf("Error inserting into bucket: %s", err)
-	}
+// 	var newEntry models.Object
+// 	for k, v := range data {
+// 		fmt.Printf("Key: %s, Value: %s\n", k, v)
+// 		newEntry.Key = k
+// 		newEntry.Value = v
+// 	}
 
-	/*To add gRPC contact*/
-	/*record first response-> writeCoordinator*/
+// 	// var newentry models.Object
+// 	// json.Unmarshal(reqBody, &newentry)
+// 	if newEntry.VC != nil {
+// 		newEntry.VC = vectorclock.UpdateRecv(nodename, newEntry.VC)
+// 	} else {
+// 		newEntry.VC = vectorclock.UpdateRecv(nodename, map[string]uint64{nodename: 0})
+// 	}
 
-	/*Edit to return a list of objects instead*/
-	json.NewEncoder(w).Encode(newentry)
+// 	/*To add ignore if new updated vector clock is outdated?*/
 
-}
+// 	// Insert test value into bucket
+// 	err = db.Put("testBucket", newEntry)
+// 	if err != nil {
+// 		log.Fatalf("Error inserting into bucket: %s", err)
+// 	}
 
-func returnSingleEntry(w http.ResponseWriter, r *http.Request) {
+// 	/*To add gRPC contact*/
+// 	/*record first response-> writeCoordinator*/
 
-	/*To add check for if node handles key*/
-	nodename := strings.Trim(r.Host, "localhost:")
-	id, err := strconv.Atoi(nodename)
+// 	/*Edit to return a list of objects instead*/
+// 	json.NewEncoder(w).Encode(newEntry)
+// }
 
-	vars := mux.Vars(r)
-	key := vars["ic"]
-	fmt.Println(key)
+// func returnSingleEntry(w http.ResponseWriter, r *http.Request) {
 
-	// Open database
-	db, err := bolt.ConnectDB(id)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer db.DB.Close()
+// 	/*To add check for if node handles key*/
+// 	nodename := strings.Trim(r.Host, "localhost:")
+// 	id, _ := strconv.Atoi(nodename)
 
-	// Read from bucket
-	value := db.Get("testBucket", key)
-	fmt.Printf("Value at key %s: %s", key, value.GeoLoc)
+// 	vars := mux.Vars(r)
+// 	key := vars["ic"]
+// 	fmt.Println(key)
 
-	/*To add gRPC contact*/
-	/*collate conflicting list*/
+// 	// Open database
+// 	db, err := bolt.ConnectDB(id)
+// 	if err != nil {
+// 		log.Fatal(err)
+// 	}
+// 	defer db.DB.Close()
 
-	/*Edit to return a list of objects instead*/
-	json.NewEncoder(w).Encode(value)
+// 	// Read from bucket
+// 	value := db.Get("testBucket", key)
+// 	fmt.Println(value)
 
-}
+// 	/*To add gRPC contact*/
+// 	/*collate conflicting list*/
 
-func createServer(port int) *http.Server {
-	/*creates a new instance of a mux router*/
-	myRouter := mux.NewRouter().StrictSlash(true)
+// 	/*Edit to return a list of objects instead*/
+// 	json.NewEncoder(w).Encode(value)
 
-	/*write new entry*/
+// }
 
-	myRouter.HandleFunc("/data", createSingleEntry).Methods("POST")
+// func createServer(port int) *http.Server {
+// 	fmt.Println("Node running at port", port)
+// 	/*creates a new instance of a mux router*/
+// 	myRouter := mux.NewRouter().StrictSlash(true)
 
-	/*return single entry*/
-	myRouter.HandleFunc("/data/{ic}", returnSingleEntry)
+// 	/*write new entry*/
 
-	server := http.Server{
-		Addr:    fmt.Sprintf(":%v", port), //:{port}
-		Handler: myRouter,
-	}
-	return &server
+// 	myRouter.HandleFunc("/data", createSingleEntry).Methods("POST")
 
-}
+// 	/*return single entry*/
+// 	myRouter.HandleFunc("/data/{ic}", returnSingleEntry)
+
+// 	server := http.Server{
+// 		Addr:    fmt.Sprintf(":%v", port), //:{port}
+// 		Handler: myRouter,
+// 	}
+// 	return &server
+
+// }
 
 func main() {
 	wg := new(sync.WaitGroup)
@@ -137,13 +142,13 @@ func main() {
 	*/
 
 	go func() {
-		server := createServer(9000)
+		server := nodes.CreateServer(9000)
 		fmt.Println(server.ListenAndServe())
 		wg.Done()
 	}()
 
 	go func() {
-		server := createServer(9022)
+		server := nodes.CreateServer(9022)
 		fmt.Println(server.ListenAndServe())
 		wg.Done()
 	}()
