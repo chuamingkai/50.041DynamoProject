@@ -8,32 +8,19 @@ service Replication {
     rpc GetReplica (GetRepRequest) returns (GetRepResponse);
 }
 
-message VectorClock {
-    map<int64, int64> vc = 1;
-    int64 nodeID = 2;
-}
-
-message VersionedData {
-    bytes data = 1;
-    VectorClock version = 2;
-}
-
 message PutRepRequest {
     bytes key = 1;
-    VersionedData data = 2;
-    VectorClock vectorClock = 3;
+    bytes data = 2;
 }
 
 message PutRepResponse {
-    VectorClock vectorClock = 1;
+    bool isDone = 1;
 }
 
 message GetRepRequest {
     bytes key = 1;
-    VectorClock vectorClock = 2;
 }
 
 message GetRepResponse {
-    VersionedData data = 1;
-    VectorClock vectorClock = 2;
+    bytes data = 1;
 }
