@@ -1,19 +1,136 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
+	"net/http"
+
+	"github.com/gorilla/mux"
 
 	"github.com/chuamingkai/50.041DynamoProject/internal/bolt"
 	"github.com/chuamingkai/50.041DynamoProject/internal/models"
+	"github.com/chuamingkai/50.041DynamoProject/pkg/consistenthashing"
 )
 
-func main() {
-	id := 55 // TODO: Dynamically assign node IDs
+// open ports 9000-9100
 
+// let's declare a global Keys array
+// that we can then populate in our main function
+// to simulate a database
+var Keys []Key
+
+
+// HTPP:{"key":"asd", "value":"sdf", "VC":{"9000":"1"}}
+type Key struct {
+	Id      string `json:"Id"`
+    Title string `json:"Title"`
+    Desc string `json:"desc"`
+    Content string `json:"content"`
+}
+
+
+
+
+func homePage(w http.ResponseWriter, r *http.Request){
+    fmt.Fprintf(w, "Client landing!")
+    fmt.Println("Endpoint Hit: nodemanager http server")
+}
+
+func handleRequests() {
+    // creates a new instance of a mux router
+    myRouter := mux.NewRouter().StrictSlash(true)
+    // replace http.HandleFunc with myRouter.HandleFunc
+    myRouter.HandleFunc("/", homePage)
+    myRouter.HandleFunc("/all", returnAllKeys)
+    // finally, instead of passing in nil, we want
+    // to pass in our newly created router as the second
+    // argument
+	// NOTE: Ordering is important here! This has to be defined before
+    // the other `/key` endpoint. 
+    myRouter.HandleFunc("/key", createNewKey).Methods("POST")
+    myRouter.HandleFunc("/key/{id}", returnSingleKey)
+    log.Fatal(http.ListenAndServe(":8000", myRouter))
+}
+
+func returnSingleKey(w http.ResponseWriter, r *http.Request){
+    vars := mux.Vars(r)
+    key := vars["id"]
+
+    // Loop over all of our Articles
+    // if the article.Id equals the key we pass in
+    // return the article encoded as JSON
+    for _, article := range Keys {
+        if article.Id == key {
+            json.NewEncoder(w).Encode(article)
+        }
+    }
+}
+
+
+// encode keys to arr->json str
+func returnAllKeys(w http.ResponseWriter, r *http.Request){
+    fmt.Println("Endpoint Hit: returnAllKeys")
+    json.NewEncoder(w).Encode(Keys)
+}
+
+
+func createNewKey(w http.ResponseWriter, r *http.Request) {
+    // get the body of our POST request
+    // unmarshal this into a new Article struct
+    // append this to our Articles array.    
+    reqBody, _ := ioutil.ReadAll(r.Body)
+    var article Key 
+    json.Unmarshal(reqBody, &article)
+    // update our global Articles array to include
+    // our new Article
+    Keys = append(Keys, article)
+
+    json.NewEncoder(w).Encode(article)
+}
+
+func deleteKey(w http.ResponseWriter, r *http.Request) {
+    // once again, we will need to parse the path parameters
+    vars := mux.Vars(r)
+    // we will need to extract the `id` of the article we
+    // wish to delete
+    id := vars["id"]
+
+    // we then need to loop through all our articles
+    for index, key := range Keys {
+        // if our id path parameter matches one of our
+        // articles
+        if key.Id == id {
+            // updates our Articles array to remove the 
+            // article
+            Keys = append(Keys[:index], Keys[index+1:]...)
+        }
+    }
+
+}
+
+
+func main() {
+ 
+	//populate with dummy data
+	Keys = []Key{
+        Key{Id: "1", Title: "Hello", Desc: "Article Description", Content: "Article Content"},
+        Key{Id: "2", Title: "Hello 2", Desc: "Article Description", Content: "Article Content"},
+    }
+
+	handleRequests()
+
+	//---------------------------------------
+	var ring = consistenthash.NewRing()
+	fmt.Println(ring)
+
+	
+	id := 55 // TODO: Dynamically assign node IDs
+	
 	testEntry := models.Object{
-		Key: "S1234567A",
-		Value: "23:23:23:23 NW",
+		IC: "S1234567A",
+		GeoLoc: "23:23:23:23 NW",
 	}
 
 	// Open database
@@ -36,6 +153,6 @@ func main() {
 	}
 
 	// Read from bucket
-	value := db.Get("testBucket", testEntry.Key)
-	fmt.Printf("Value at key %s: %s", testEntry.Key, value)
+	value := db.Get("testBucket", testEntry.IC)
+	fmt.Printf("Value at key %s: %s", testEntry.IC, value)
 }
