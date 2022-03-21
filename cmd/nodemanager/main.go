@@ -9,9 +9,7 @@ import (
 
 	"github.com/gorilla/mux"
 
-	"github.com/chuamingkai/50.041DynamoProject/internal/bolt"
-	"github.com/chuamingkai/50.041DynamoProject/internal/models"
-	"github.com/chuamingkai/50.041DynamoProject/pkg/consistenthashing"
+	consistenthash "github.com/chuamingkai/50.041DynamoProject/pkg/consistenthashing"
 )
 
 // open ports 9000-9100
@@ -126,33 +124,33 @@ func main() {
 	fmt.Println(ring)
 
 	
-	id := 55 // TODO: Dynamically assign node IDs
+	// id := 55 // TODO: Dynamically assign node IDs
 	
-	testEntry := models.Object{
-		IC: "S1234567A",
-		GeoLoc: "23:23:23:23 NW",
-	}
+	// testEntry := models.Object{
+	// 	IC: "S1234567A",
+	// 	GeoLoc: "23:23:23:23 NW",
+	// }
 
-	// Open database
-	db, err := bolt.ConnectDB(id)
-	if err != nil {
-		log.Fatalf("Error opening database: %s", err)
-	}
-	defer db.DB.Close()
+	// // Open database
+	// db, err := bolt.ConnectDB(id)
+	// if err != nil {
+	// 	log.Fatalf("Error opening database: %s", err)
+	// }
+	// defer db.DB.Close()
 
-	// Create bucket
-	err = db.CreateBucket("testBucket")
-	if err != nil {
-		log.Fatalf("Error creating bucket: %s", err)
-	}
+	// // Create bucket
+	// err = db.CreateBucket("testBucket")
+	// if err != nil {
+	// 	log.Fatalf("Error creating bucket: %s", err)
+	// }
 
-	// Insert test value into bucket
-	err = db.Put("testBucket", testEntry)
-	if err != nil {
-		log.Fatalf("Error inserting into bucket: %s", err)
-	}
+	// // Insert test value into bucket
+	// err = db.Put("testBucket", testEntry)
+	// if err != nil {
+	// 	log.Fatalf("Error inserting into bucket: %s", err)
+	// }
 
-	// Read from bucket
-	value := db.Get("testBucket", testEntry.IC)
-	fmt.Printf("Value at key %s: %s", testEntry.IC, value)
+	// // Read from bucket
+	// value := db.Get("testBucket", testEntry.IC)
+	// fmt.Printf("Value at key %s: %s", testEntry.IC, value)
 }

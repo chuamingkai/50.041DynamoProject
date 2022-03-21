@@ -5,7 +5,6 @@ import (
 	"crypto/md5"
 	"fmt"
 	"math/big"
-	"strings"
 )
 
 const NUM_VIRTUAL_NODES int = 3  // TODO: probably slap this in some config file later
@@ -58,17 +57,17 @@ func NewRing() *Ring {
 	return &Ring{&dll, nodeMap}
 }
 
-func newVirtualNode(name string, portnum uint64) *VirtualNode {
+func newVirtualNode(name string, id uint64) *VirtualNode {
 	return &VirtualNode{
 		VirtualName: name,
-		NodeId:      portnum,
+		NodeId:      id,
 		Hash:        Hash(name),
 	}
 }
 
-func newNodeInfo(portnum uint64, ls []*VirtualNode) NodeInfo {
+func newNodeInfo(id uint64, ls []*VirtualNode) NodeInfo {
 	return NodeInfo{
-		NodeId:       portnum,
+		NodeId:       id,
 		VirtualNodes: ls,
 	}
 }
@@ -85,18 +84,18 @@ func (dll DoublyLinkedList) TraverseAndPrint() string {
 	return output.String()
 }
 
-// AddNode adds a node to the Ring with given name and portnum
+// AddNode adds a node to the Ring with given name and id
 // Caller of AddNode function has to handle reallococation of keys.
 // targetNode needs to check for all keys' hash that are >= newNode.Hash
 // and send those key-value pairs to newNode
-func (r *Ring) AddNode(name string, portnum uint64) []ReallocationNotice {
+func (r *Ring) AddNode(name string, id uint64) []ReallocationNotice {
 	ls := make([]*VirtualNode, NUM_VIRTUAL_NODES)
 	reAlloc := make([]ReallocationNotice, 0)
 
 	isEmptyBefore := r.Nodes.Length == 0
 	for i := 0; i < NUM_VIRTUAL_NODES; i++ {
 		vName := fmt.Sprintf("%s_%d", name, i)
-		vNode := newVirtualNode(vName, portnum)
+		vNode := newVirtualNode(vName, id)
 		ls[i] = vNode
 		r.Nodes.Length++
 		if r.Nodes.Length == 1 {
@@ -121,7 +120,9 @@ func (r *Ring) AddNode(name string, portnum uint64) []ReallocationNotice {
 					// insert after head
 					vNode.Prev = cmpNode
 					vNode.Next = cmpNode.Next
-					cmpNode.Next.Prev = vNode
+					if cmpNode.Next != nil {
+						cmpNode.Next.Prev = vNode
+					}
 					cmpNode.Next = vNode
 				}
 			} else {
@@ -160,7 +161,7 @@ func (r *Ring) AddNode(name string, portnum uint64) []ReallocationNotice {
 			}
 		}
 	}
-	r.NodeMap[name] = newNodeInfo(portnum, ls)
+	r.NodeMap[name] = newNodeInfo(id, ls)
 	return reAlloc
 }
 
@@ -213,10 +214,10 @@ func (r *Ring) GetPreferenceList(key string) []VirtualNode {
 
 // IsNodeResponsibleForKey returns true if the physical node is in
 // the preference list for that key
-func (r *Ring) IsNodeResponsibleForKey(key string, name string) bool {
+func (r *Ring) IsNodeResponsibleForKey(key string, id uint64) bool {
 	prefList := r.GetPreferenceList(key)
 	for _, n := range prefList {
-		if strings.HasPrefix(n.VirtualName, name) {
+		if n.NodeId == id {
 			return true
 		}
 	}
