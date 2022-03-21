@@ -1,9 +1,12 @@
 package main
 
 import (
+<<<<<<< HEAD
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+=======
+>>>>>>> 8d70ab0c180500b2addaed43b4e9907eb59e1392
 	"log"
 	"net/http"
 
@@ -14,6 +17,7 @@ import (
 	"github.com/chuamingkai/50.041DynamoProject/pkg/consistenthashing"
 )
 
+<<<<<<< HEAD
 // open ports 9000-9100
 
 // let's declare a global Keys array
@@ -118,6 +122,11 @@ func main() {
         Key{Id: "1", Title: "Hello", Desc: "Article Description", Content: "Article Content"},
         Key{Id: "2", Title: "Hello 2", Desc: "Article Description", Content: "Article Content"},
     }
+=======
+// TODO: Replace this with the node manager initialisation code
+func main() {
+	id := 55
+>>>>>>> 8d70ab0c180500b2addaed43b4e9907eb59e1392
 
 	handleRequests()
 
@@ -153,6 +162,12 @@ func main() {
 	}
 
 	// Read from bucket
+<<<<<<< HEAD
 	value := db.Get("testBucket", testEntry.IC)
 	fmt.Printf("Value at key %s: %s", testEntry.IC, value)
 }
+=======
+	// getResult := db.Get("testBucket", testEntry.Key)
+	// fmt.Println(getResult)
+}
+>>>>>>> 8d70ab0c180500b2addaed43b4e9907eb59e1392

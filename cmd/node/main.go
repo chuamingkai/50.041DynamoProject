@@ -1,41 +1,25 @@
-/*package main
+package main
 
 import (
+	"flag"
 	"fmt"
-	"log"
+	"strconv"
 
-	"github.com/chuamingkai/50.041DynamoProject/internal/bolt"
-	"github.com/chuamingkai/50.041DynamoProject/internal/models"
+	"github.com/chuamingkai/50.041DynamoProject/internal/nodes"
+	consistenthash "github.com/chuamingkai/50.041DynamoProject/pkg/consistenthashing"
 )
 
+// go run cmd/node/main.go -port PORT_NUMBER
 func main() {
-	id := 55 // TODO: Dynamically assign node IDs
+	portPtr := flag.Int("port", 9000, "node port number")
+	flag.Parse()
 
-	testEntry := models.Object{
-		Key: "S1234567A",
-		Value: "23:23:23:23 NW",
-	}
+	portNumber := *portPtr
+	ring := consistenthash.NewRing()
 
-	// Open database
-	db, err := bolt.ConnectDB(id)
-	if err != nil {
-		log.Fatalf("Error opening database: %s", err)
-	}
-	defer db.DB.Close()
+	ring.AddNode(strconv.Itoa(portNumber), uint64(portNumber))
 
-	// Create bucket
-	err = db.CreateBucket("testBucket")
-	if err != nil {
-		log.Fatalf("Error creating bucket: %s", err)
-	}
+	server := nodes.CreateServer(portNumber, ring)
+	fmt.Println(server.ListenAndServe())
 
-	// Insert test value into bucket
-	err = db.Put("testBucket", testEntry)
-	if err != nil {
-		log.Fatalf("Error inserting into bucket: %s", err)
-	}
-
-	// Read from bucket
-	value := db.Get("testBucket", testEntry.Key)
-	fmt.Printf("Value at key %s: %s", testEntry.Key, value)
-}*/
+}

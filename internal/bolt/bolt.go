@@ -14,7 +14,7 @@ type DB struct {
 
 // Setup database
 func ConnectDB(id int) (DB, error) {
-	dbName := fmt.Sprintf("node%vstore.db", id)
+	dbName := fmt.Sprintf("store/node%vstore.db", id)
 	db, err := bolt.Open(dbName, 0600, nil)
 	return DB{DB: db}, err
 }
@@ -33,27 +33,27 @@ func (db *DB) Put(bucketName string, object models.Object) error {
 		b := tx.Bucket([]byte(bucketName))
 		newentry, err := json.Marshal(object)
 
-		b.Put([]byte(object.IC), newentry)
+		b.Put([]byte(object.Key), newentry)
 		return err
 	})
 }
 
 // Read value at key in bucket
-func (db *DB) Get(bucketName, key string) models.Object {
+func (db *DB) Get(bucketName, key string) (models.Object, error) {
 	value := make([]byte, 1000)
 	var newupd models.Object
 
-	db.DB.View(func(tx *bolt.Tx) error {
-
+	err := db.DB.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketName))
 		copy(value, b.Get([]byte(key)))
 		err := json.Unmarshal(b.Get([]byte(key)), &newupd)
-		if err == nil {
-			return nil
-		}
-		return nil
+		return err
 	})
 
-	return newupd
+	if err != nil {
+		return newupd, err
+	}
+
+	return newupd, nil
 
 }
