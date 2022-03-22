@@ -19,7 +19,9 @@ func main() {
 
 	ring.AddNode(strconv.Itoa(portNumber), uint64(portNumber))
 
-	server := nodes.CreateServer(portNumber, ring)
-	fmt.Println(server.ListenAndServe())
+	server := nodes.NewNodeServer(int64(portNumber), ring)
+	serverPtr := server.CreateServer()
+	fmt.Println("Server running at port", portNumber)
+	fmt.Println(serverPtr.ListenAndServe())
 
 }

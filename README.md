@@ -9,6 +9,38 @@ This projects implements a simplified version of Dynamo, a distributed key-value
 ### Dynamo Node
 Each node in Dynamo uses Bolt data store to store the key-value pairs. Each node runs a HTTP server and a gRPC server. The HTTP server handles requests from client to read and write key-value pairs, while the gRPC server is responsible for calls in between nodes, such as read and write requests for data replication.
 
+HTTP endpoints:
+* /addnode (POST) - Add new node to the ring. Request body:
+```
+{
+    "NodeName": NODE_NAME
+}
+```
+* /delnode (POST) - Remove node from the ring. Request body:
+```
+{
+    "NodeName": NODE_NAME
+}
+```
+* /data (POST) - Write data to a bucket. Request body:
+```
+{
+	"BucketName": BUCKET_NAME,
+	"Object": {
+        "Key": KEY,
+        "Value": VALUE
+    }
+}
+```
+* /data (GET) - Get data at a given key in a bucket. Request body:
+```
+{
+	"BucketName": BUCKET_NAME,
+	"Key": KEY
+}
+```
+* /db/:bucketName (POST) - Create new bucket if it does not exist.
+
 ### Node Manager
 The node manager sits in front of the Dynamo nodes and runs a HTTP server. It informs clients of the node that it should contact for a certain key. The node manager also handles ring membership. Whenever a node wants to enter or exit the ring, it informs the node manager and the node manager will broadcast this information to the nodes and inform the nodes involved to do redistribution of keys. 
 

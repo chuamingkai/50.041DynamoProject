@@ -5,17 +5,24 @@ import (
 	"encoding/gob"
 	"log"
 
+	"github.com/chuamingkai/50.041DynamoProject/internal/bolt"
 	"github.com/chuamingkai/50.041DynamoProject/internal/models"
-	rp "github.com/chuamingkai/50.041DynamoProject/pkg/grpc"
+	pb "github.com/chuamingkai/50.041DynamoProject/pkg/internalcomm"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
-const bucketName string = "testBucket" // TODO: Change bucket name
+// TODO: Remove replicaBucket -> replicas go into the same bucket as non-replicas (non-distinguishable)
 
-func getReplica(key string) (models.Object, bool, error) {
+type replicaServer struct {
+	pb.UnimplementedReplicationServer
+	boltDB *bolt.DB // Server's own DB pointer
+	replicaBucket string // Name of bucket to store replicas
+}
+
+func (s *replicaServer) doGetReplica(key string) (models.Object, bool, error) {
 	replicaKey := "replica_" + key
-	replica, err := db.Get(bucketName, replicaKey)
+	replica, err := s.boltDB.Get(s.replicaBucket, replicaKey)
 	if err != nil {
 		return replica, false, err
 	} else {
@@ -23,17 +30,17 @@ func getReplica(key string) (models.Object, bool, error) {
 	}
 }
 
-func putReplica(newReplica models.Object) error {
+func (s *replicaServer) doPutReplica(newReplica models.Object) error {
 	// Get old value to compare versions
 	replicaKey := "replica_" + newReplica.Key
-	currentReplica, found, err := getReplica(replicaKey)
+	currentReplica, found, err := s.doGetReplica(replicaKey)
 	if err != nil {
 		return err
 	}
 
 	if !found || compareVectorClocks(currentReplica.VC, newReplica.VC) {
 		newReplica.Key = replicaKey
-		err := db.Put(bucketName, newReplica)
+		err := s.boltDB.Put(s.replicaBucket, newReplica)
 		if err != nil {
 			return err
 		}
@@ -41,16 +48,11 @@ func putReplica(newReplica models.Object) error {
 	return nil
 }
 
-// TODO: Implement comparison of vector clocks
-func compareVectorClocks(currentVC, incomingVC map[string]uint64) bool {
-	return true
-}
-
-func GetReplica(req *rp.GetRepRequest) (*rp.GetRepResponse, error) {
+func (s *replicaServer) GetReplica(req *pb.GetRepRequest) (*pb.GetRepResponse, error) {
 	stringKey := string(req.Key)
 	log.Printf("Getting replica for key %v from data store...\n", stringKey)
 
-	replica, found, err := getReplica(stringKey)
+	replica, found, err := s.doGetReplica(stringKey)
 
 	if err != nil {
 		return nil, err
@@ -64,11 +66,11 @@ func GetReplica(req *rp.GetRepRequest) (*rp.GetRepResponse, error) {
 		}
 
 		replicaBytes := replicaBuffer.Bytes()
-		return &rp.GetRepResponse{Data: replicaBytes}, nil
+		return &pb.GetRepResponse{Data: replicaBytes}, nil
 	}
 }
 
-func PutReplica(req *rp.PutRepRequest) (*rp.PutRepResponse, error) {
+func (s *replicaServer) PutReplica(req *pb.PutRepRequest) (*pb.PutRepResponse, error) {
 	stringKey := string(req.Key)
 	log.Printf("Saving replica for key %v into data store...\n", stringKey)
 
@@ -79,10 +81,22 @@ func PutReplica(req *rp.PutRepRequest) (*rp.PutRepResponse, error) {
 		return nil, err
 	}
 
-	err = putReplica(replicaObject)
+	err = s.doPutReplica(replicaObject)
 	if err != nil {
 		return nil, err
 	}
 
-	return &rp.PutRepResponse{IsDone: true}, nil
+	return &pb.PutRepResponse{IsDone: true}, nil
+}
+
+// TODO: Implement comparison of vector clocks
+func compareVectorClocks(currentVC, incomingVC map[string]uint64) bool {
+	return true
+}
+
+func newReplicaServer(boltDB *bolt.DB) *replicaServer {
+	return &replicaServer{
+		boltDB: boltDB,
+		replicaBucket: "replicas",
+	}
 }
