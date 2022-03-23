@@ -8,6 +8,8 @@ import (
 	bolt "go.etcd.io/bbolt"
 )
 
+// TODO: Move this file to pkg/
+
 type DB struct {
 	DB *bolt.DB
 }
