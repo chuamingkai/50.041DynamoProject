@@ -28,7 +28,7 @@ func main() {
 	serverPtr := server.CreateServer()
 
 	// Create gRPC listener
-	grpcAddress := fmt.Sprintf("localhost:%v", *portPtr)
+	grpcAddress := fmt.Sprintf("localhost:%v", *portPtr - 3000)
 	grpcListener, err := net.Listen("tcp", grpcAddress)
 	if err != nil {
 		log.Fatalf("Failed to listen to grpc address %v: %v", grpcAddress, err)
