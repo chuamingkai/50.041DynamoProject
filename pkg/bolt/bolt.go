@@ -55,14 +55,31 @@ func (db *DB) Put(bucketName string, object models.Object) error {
 }
 
 // Read value at key in bucket
-func (db *DB) Get(bucketName, key string) (models.Object, error) {
-	var newupd models.Object
+// func (db *DB) Get(bucketName, key string) (models.Object, error) {
+// 	var newupd models.Object
 
+// 	err := db.DB.View(func(tx *bolt.Tx) error {
+// 		b := tx.Bucket([]byte(bucketName))
+// 		err := json.Unmarshal(b.Get([]byte(key)), &newupd)
+// 		return err
+// 	})
+
+// 	return newupd, err
+// }
+
+// Read value at key in bucket
+func (db *DB) Get(bucketName, key string) ([]byte, error) {
+	var numBytes int
+	var value []byte
 	err := db.DB.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketName))
-		err := json.Unmarshal(b.Get([]byte(key)), &newupd)
-		return err
+		v := b.Get([]byte(key))
+		numBytes = len(v)
+		if v != nil {
+			value = make([]byte, numBytes)
+			copy(value, v)
+		}
+		return nil
 	})
-
-	return newupd, err
+	return value, err
 }

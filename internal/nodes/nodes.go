@@ -103,12 +103,6 @@ func (s *nodesServer) doGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if bucket exists
-	if !s.boltDB.BucketExists(reqBody.BucketName) {
-		http.Error(w, "Bucket does not exist", http.StatusBadRequest)
-		return
-	}
-
 	// Check if node handles key
 	nodename := strings.Trim(r.Host, "localhost:")
 	number, _ := strconv.ParseUint(nodename, 10, 64)
@@ -117,42 +111,26 @@ func (s *nodesServer) doGet(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Node is not responsible for key!", http.StatusBadRequest)
 		return
 	}
-	// id, err := strconv.Atoi(nodename)
-	// fmt.Println(s.ring.GetPreferenceList(key))
 
-	// Read from bucket
-	log.Println("Reading from bucket", reqBody.BucketName)
-	value, err := s.boltDB.Get(reqBody.BucketName, reqBody.Key)
+	// Get replicas from servers in preference list
+	serverDeadline := time.Now().Add(10 * time.Second)
+	ctxRep, cancel := context.WithDeadline(context.Background(), serverDeadline)
+	defer cancel()
+
+	getRepReq := pb.GetRepRequest{
+		BucketName: reqBody.BucketName,
+		Key: reqBody.Key,
+	}
+	
+	getRepResult, err := s.Get(ctxRep, &getRepReq)
+	// log.Println("Am h")
+
 	if err != nil {
-		// log.Fatal("Error getting from bucket:", err)
+		log.Printf("Error getting replicas: %s\n", err.Error())
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
-	}
-
-	// Send list if have conflicts, else send data
-	if value.Key != "" {
-		// Get replicas from servers in preference list
-		serverDeadline := time.Now().Add(10 * time.Second)
-		ctxRep, cancel := context.WithDeadline(context.Background(), serverDeadline)
-		defer cancel()
-
-		getRepReq := pb.GetRepRequest{
-			BucketName: reqBody.BucketName,
-			Key: reqBody.Key,
-		}
-
-		getRepRes, err := s.Get(ctxRep, &getRepReq)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		} else if getRepRes.HasVersionConflict {
-			// TODO: Encode list of conflicting replicas
-			http.Error(w, "Versioning error encountered", http.StatusInternalServerError)
-		} else {
-			json.NewEncoder(w).Encode(value)
-		}	
 	} else {
-		http.Error(w, "Value not found!", http.StatusNotFound)
+		json.NewEncoder(w).Encode(getRepResult)
 	}
 
 }
@@ -189,12 +167,15 @@ func (s *nodesServer) updateAddNode(w http.ResponseWriter, r *http.Request) {
 		}
 		if !exist {
 			s.ring.AddNode(newnode.NodeName, number)
-			fmt.Println(s.ring.Nodes.TraverseAndPrint())
+			log.Printf("Node %s added to ring.\n", newnode.NodeName)
+			// fmt.Println(s.ring.Nodes.TraverseAndPrint())
+			json.NewEncoder(w).Encode(s.ring.Nodes.TraverseAndPrint())
 		} else {
-			http.Error(w, "Node already exists!", http.StatusServiceUnavailable)
+			http.Error(w, "Node already exists!", http.StatusBadRequest)
 		}
+	} else {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
-	json.NewEncoder(w).Encode(newnode)
 }
 
 func (s *nodesServer) updateDelNode(w http.ResponseWriter, r *http.Request) {
@@ -221,7 +202,7 @@ func (s *nodesServer) updateDelNode(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *nodesServer) CreateServer() *http.Server {
-	fmt.Println("Setting up node at port", s.nodeId)
+	log.Println("Setting up node at port", s.nodeId)
 
 	/*creates a new instance of a mux router*/
 	myRouter := mux.NewRouter().StrictSlash(true)

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/gob"
+	"errors"
 	"log"
 
 	"github.com/chuamingkai/50.041DynamoProject/internal/models"
@@ -12,7 +13,11 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func (s *nodesServer) doGetReplica(bucketName, key string) (models.Object, bool, error) {
+func (s *nodesServer) doGetReplica(bucketName, key string) ([]byte, bool, error) {// Check if bucket exists
+	if !s.boltDB.BucketExists(bucketName) {
+		return nil, false, errors.New("Bucket does not exist on node" + string(s.nodeId))
+	}
+
 	replica, err := s.boltDB.Get(bucketName, key)
 	if err != nil {
 		return replica, false, err
@@ -23,10 +28,14 @@ func (s *nodesServer) doGetReplica(bucketName, key string) (models.Object, bool,
 
 func (s *nodesServer) doPutReplica(bucketName, key string, newReplica models.Object) error {
 	// Get old value to compare versions
-	currentReplica, found, err := s.doGetReplica(bucketName, key)
+	currentReplicaBytes, found, err := s.doGetReplica(bucketName, key)
 	if err != nil {
 		return err
 	}
+
+	currentReplicaBuffer := bytes.NewBuffer(currentReplicaBytes)
+	var currentReplica models.Object
+	gob.NewDecoder(currentReplicaBuffer).Decode(&currentReplica)
 
 	if !found || compareVectorClocks(currentReplica.VC, newReplica.VC) {
 		err = s.boltDB.Put(bucketName, newReplica)
@@ -34,16 +43,17 @@ func (s *nodesServer) doPutReplica(bucketName, key string, newReplica models.Obj
 	return err
 }
 
+// TODO: Figure out what to do when the replica's key is not found
 // GetReplica issued from server responsible for the get operation
 func (s *nodesServer) GetReplica(ctx context.Context, req *pb.GetRepRequest) (*pb.GetRepResponse, error) {
-	log.Printf("Getting replica for key: {%v} from local db\n", string(req.Key))
+	// log.Printf("Getting replica for key: {%v} from local db\n", string(req.Key))
 
 	replica, found, err := s.doGetReplica(req.BucketName, req.Key)
-
+	log.Printf("Replica for key %v found at node %v: %s\n", req.Key, s.nodeId, replica)
 	if err != nil {
 		return nil, err
 	} else if !found {
-		return nil, status.Error(codes.NotFound, "Bolt DB key not found")
+		return nil, status.Error(codes.NotFound, "Key not found")
 	} else {
 		var replicaBuffer bytes.Buffer
 		err = gob.NewEncoder(&replicaBuffer).Encode(replica)
@@ -51,8 +61,8 @@ func (s *nodesServer) GetReplica(ctx context.Context, req *pb.GetRepRequest) (*p
 			return nil, err
 		}
 
-		replicaBytes := replicaBuffer.Bytes()
-		return &pb.GetRepResponse{Data: replicaBytes}, nil
+		// replicaBytes := replicaBuffer.Bytes()
+		return &pb.GetRepResponse{Data: replica}, nil
 	}
 }
 

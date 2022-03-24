@@ -21,27 +21,35 @@ func main() {
 	portNumber := *portPtr
 	ring := consistenthash.NewRing()
 
+	// TODO: Node discovery
 	ring.AddNode(strconv.Itoa(portNumber), uint64(portNumber))
 
 	server := nodes.NewNodeServer(int64(portNumber), ring)
 	serverPtr := server.CreateServer()
 
 	// Create gRPC listener
-	grpcAddress := fmt.Sprintf("localhost:%v", *portPtr - 3000)
+	grpcAddress := fmt.Sprintf("localhost:%v", *portPtr)
 	grpcListener, err := net.Listen("tcp", grpcAddress)
 	if err != nil {
 		log.Fatalf("Failed to listen to grpc address %v: %v", grpcAddress, err)
 	}
 
+	// TODO: Run a grpc client as well
 	// Register to gRPC
 	grpcServer := grpc.NewServer()
 	pb.RegisterReplicationServer(grpcServer, server)
 
-	fmt.Println("Server running at port", portNumber)
-	fmt.Println(serverPtr.ListenAndServe())
+	go func () {
+		log.Println("Server running at port", portNumber)
+		if err := serverPtr.ListenAndServe(); err != nil {
+			log.Fatalf("Terminating node %v due to error: %v\n", portNumber, err.Error())
+		}
+	}()
+	
 
 	// Serve gRPC
 	go func() {
+		log.Printf("Serving gRPC server at %v\n", grpcAddress)
 		if err := grpcServer.Serve(grpcListener); err != nil {
 			log.Fatalf("Failed to serve grpc address %v: %v", grpcAddress, err)
 		}
