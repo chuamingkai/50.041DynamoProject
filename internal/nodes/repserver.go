@@ -29,7 +29,18 @@ type GetRepResult struct {
 	HasVersionConflict bool `json:"hasVersionConflict"`
 }
 
-func (s *nodesServer) Get(ctx context.Context, req *pb.GetRepRequest) (*GetRepResult, error) {
+type PutRepMessage struct {
+	peerId uint64
+	putSuccess bool
+	err error
+}
+
+type PutRepResult struct {
+	Success bool `json:"success"`
+	Err error `json:"error"`
+}
+
+func (s *nodesServer) serverGetReplicas(ctx context.Context, req *pb.GetRepRequest) (*GetRepResult, error) {
 	log.Printf("Received GET request from clients for key %s\n", req.Key)
 
 	// Get preference list for the key
@@ -60,7 +71,7 @@ func (s *nodesServer) Get(ctx context.Context, req *pb.GetRepRequest) (*GetRepRe
 				// var peer pb.ReplicationClient
 				peerAddr := fmt.Sprintf("localhost:%v", vn.NodeId)
 				dialOptions := grpc.WithTransportCredentials(insecure.NewCredentials())
-				conn, err := grpc.Dial(peerAddr, dialOptions) // TODO: Set transport security
+				conn, err := grpc.Dial(peerAddr, dialOptions)
 				
 				if err == nil {
 					peer := pb.NewReplicationClient(conn)
@@ -70,13 +81,11 @@ func (s *nodesServer) Get(ctx context.Context, req *pb.GetRepRequest) (*GetRepRe
 					}
 				} else {
 					log.Printf("Error contacting node %v: %v\n", vn.NodeId, err)
-					if err != nil {
-						notifyChan <- GetRepMessage{
-							peerId: vn.NodeId,
-							err: err,
-						}
-						return
-					}
+					// notifyChan <- GetRepMessage{
+					// 	peerId: vn.NodeId,
+					// 	err: err,
+					// }
+					// return
 				}
 				defer conn.Close()
 			}
@@ -90,7 +99,6 @@ func (s *nodesServer) Get(ctx context.Context, req *pb.GetRepRequest) (*GetRepRe
 			}
 
 			var repObject models.Object
-			log.Println(string(getRepRes.Data))
 			if getRepRes.Data != nil {
 				decodeErr := json.Unmarshal(bytes.Trim(getRepRes.Data, "\x00"), &repObject)
 				if decodeErr != nil {
@@ -153,7 +161,86 @@ func (s *nodesServer) Get(ctx context.Context, req *pb.GetRepRequest) (*GetRepRe
 	}
 }
 
-// TODO: Add Put() method
+func (s *nodesServer) serverPutReplicas(ctx context.Context, req *pb.PutRepRequest) *PutRepResult {
+	var reqObject models.Object
+	if err := json.Unmarshal(req.Data, &reqObject); err != nil{
+		return &PutRepResult{Success: false, Err: err}
+	}
+	log.Printf("Received PUT request from clients for key %s, value %v\n", req.Key, reqObject)
+
+	// Get preference list for the key
+	prefList := s.ring.GetPreferenceList(req.Key)
+
+	// Create context to get replicas
+	clientDeadline := time.Now().Add(5 * time.Second)
+	ctxRep, cancel := context.WithDeadline(ctx, clientDeadline)
+	defer cancel()
+
+	// Send GetRep request to all servers in preference list
+	notifyChan := make(chan PutRepMessage, consistenthash.REPLICATION_FACTOR)	
+	putRepReq := &pb.PutRepRequest{
+		Key: req.Key,
+		Data: req.Data,
+		BucketName: req.BucketName,
+	}
+	for _, virtualNode := range prefList {
+		var putRepRes *pb.PutRepResponse
+		var err error
+
+		go func(vn consistenthash.VirtualNode, notifyChan chan PutRepMessage) {
+			if vn.NodeId == uint64(s.nodeId) {
+				putRepRes, err = s.PutReplica(ctxRep, putRepReq)
+			} else {
+				peerAddr := fmt.Sprintf("localhost:%v", vn.NodeId)
+				dialOptions := grpc.WithTransportCredentials(insecure.NewCredentials())
+				conn, err := grpc.Dial(peerAddr, dialOptions)
+				
+				if err == nil {
+					peer := pb.NewReplicationClient(conn)
+					putRepRes, err = peer.PutReplica(ctxRep, putRepReq)
+					if err != nil {
+						log.Printf("Error putting replica in node %v: %v\n", vn.NodeId, err.Error())
+					}
+				} else {
+					log.Printf("Error contacting node %v: %v\n", vn.NodeId, err)
+				}
+				defer conn.Close()
+			}
+			notifyChan <- PutRepMessage{
+				peerId: vn.NodeId,
+				putSuccess: putRepRes.IsDone,
+				err: err,
+			}
+		}(virtualNode, notifyChan)
+	}
+
+	successCount := 0
+	errorMsg := "ERROR MESSAGE: "
+	for i := 0; i < len(prefList); i++ {
+		select {
+		case notifyMsg := <- notifyChan:
+			if notifyMsg.err == nil {
+				log.Printf("Received PUT replica response from server %v for key {%v} val {%v}: SUCCESS", notifyMsg.peerId, req.Key, reqObject)
+				successCount++
+			} else {
+				errorMsg = errorMsg + notifyMsg.err.Error() + ";"
+				log.Printf("Received PUT replica response from server %v for key {%v} val {%v}: ERROR occured: %v\n", notifyMsg.peerId, req.Key, reqObject, notifyMsg.err.Error())
+			}
+		case <- ctxRep.Done():
+		}
+		if ctxRep.Err() != nil || successCount == consistenthash.REPLICATION_FACTOR {
+			break
+		}
+	}
+
+	log.Printf("Finished PUTTING replica for key {%v} val {%v}, received {%v} response", req.Key, reqObject, successCount)
+	if successCount == 0 { // All servers failed to save replica
+		return &PutRepResult{Success: false, Err: errors.New(errorMsg)}
+	} else {
+		// TODO: Add case to handle partial success (not all servers in preference list successfuly saved replica)
+		return &PutRepResult{Success: true, Err: nil}
+	}
+} 
 
 func allSame(replicas []models.Object) bool {
 	for i := 1; i < len(replicas); i++ {

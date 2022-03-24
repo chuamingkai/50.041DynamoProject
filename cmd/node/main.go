@@ -34,7 +34,6 @@ func main() {
 		log.Fatalf("Failed to listen to grpc address %v: %v", grpcAddress, err)
 	}
 
-	// TODO: Run a grpc client as well
 	// Register to gRPC
 	grpcServer := grpc.NewServer()
 	pb.RegisterReplicationServer(grpcServer, server)

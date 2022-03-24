@@ -7,13 +7,15 @@ import (
 	"errors"
 	"log"
 
-	"github.com/chuamingkai/50.041DynamoProject/internal/models"
 	pb "github.com/chuamingkai/50.041DynamoProject/pkg/internalcomm"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
-func (s *nodesServer) doGetReplica(bucketName, key string) ([]byte, bool, error) {// Check if bucket exists
+// TODO: Add relevant logging messages
+
+func (s *nodesServer) doGetReplica(bucketName, key string) ([]byte, bool, error) {
+	// Check if bucket exists
 	if !s.boltDB.BucketExists(bucketName) {
 		return nil, false, errors.New("Bucket does not exist on node" + string(s.nodeId))
 	}
@@ -26,30 +28,36 @@ func (s *nodesServer) doGetReplica(bucketName, key string) ([]byte, bool, error)
 	}
 }
 
-func (s *nodesServer) doPutReplica(bucketName, key string, newReplica models.Object) error {
+func (s *nodesServer) doPutReplica(bucketName, key string, data []byte) error {
+	if !s.boltDB.BucketExists(bucketName) {
+		return errors.New("Bucket does not exist on node" + string(s.nodeId))
+	}
 	// Get old value to compare versions
-	currentReplicaBytes, found, err := s.doGetReplica(bucketName, key)
-	if err != nil {
-		return err
-	}
+	// currentReplicaBytes, found, err := s.doGetReplica(bucketName, key)
+	// if err != nil {
+	// 	return err
+	// }
 
-	currentReplicaBuffer := bytes.NewBuffer(currentReplicaBytes)
-	var currentReplica models.Object
-	gob.NewDecoder(currentReplicaBuffer).Decode(&currentReplica)
+	// currentReplicaBuffer := bytes.NewBuffer(currentReplicaBytes)
+	// var currentReplica models.Object
+	// gob.NewDecoder(currentReplicaBuffer).Decode(&currentReplica)
 
-	if !found || compareVectorClocks(currentReplica.VC, newReplica.VC) {
-		err = s.boltDB.Put(bucketName, newReplica)
-	}
-	return err
+	// if !found || compareVectorClocks(currentReplica.VC, newReplica.VC) {
+	// 	err = s.boltDB.Put(bucketName, newReplica)
+	// }
+	// return err
+	// TODO: Vector clock comparison to avoid versioning conflicts
+	return s.boltDB.Put(bucketName, key, data)
 }
 
-// TODO: Figure out what to do when the replica's key is not found
+
 // GetReplica issued from server responsible for the get operation
 func (s *nodesServer) GetReplica(ctx context.Context, req *pb.GetRepRequest) (*pb.GetRepResponse, error) {
-	// log.Printf("Getting replica for key: {%v} from local db\n", string(req.Key))
+	log.Printf("Received GET request for replica for key '%v'\n", req.Key)
 
+	// TODO: Figure out what to do when the replica's key is not found
 	replica, found, err := s.doGetReplica(req.BucketName, req.Key)
-	log.Printf("Replica for key %v found at node %v: %s\n", req.Key, s.nodeId, replica)
+	log.Printf("Replica for key '%v' found: %s\n", req.Key, replica)
 	if err != nil {
 		return nil, err
 	} else if !found {
@@ -61,26 +69,20 @@ func (s *nodesServer) GetReplica(ctx context.Context, req *pb.GetRepRequest) (*p
 			return nil, err
 		}
 
-		// replicaBytes := replicaBuffer.Bytes()
 		return &pb.GetRepResponse{Data: replica}, nil
 	}
 }
 
 // PutReplica issued from server responsible for the get operation
 func (s *nodesServer) PutReplica(ctx context.Context, req *pb.PutRepRequest) (*pb.PutRepResponse, error) {
-	replicaBuffer := bytes.NewBuffer(req.Data)
-	var replicaObject models.Object
-	err := gob.NewDecoder(replicaBuffer).Decode(&replicaObject)
-	if err != nil {
-		return nil, err
-	}
-	log.Printf("Putting replica key: %s, val: %v to local db", req.Key, replicaObject)
+	log.Printf("Received PUT request for replica for key '%s', val: %s\n", req.Key, req.Data)
 
-	err = s.doPutReplica(req.BucketName, req.Key, replicaObject)
+	err := s.doPutReplica(req.BucketName, req.Key, req.Data)
 	if err != nil {
-		return nil, err
+		return &pb.PutRepResponse{IsDone: false}, err
 	}
 
+	log.Printf("Successfully PUT replica for key '%s', val: %s\n", req.Key, req.Data)
 	return &pb.PutRepResponse{IsDone: true}, nil
 }
 

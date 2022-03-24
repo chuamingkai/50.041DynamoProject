@@ -55,12 +55,6 @@ func (s *nodesServer) doPut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if bucket exists
-	if !s.boltDB.BucketExists(reqBody.BucketName) {
-		http.Error(w, "Bucket does not exist", http.StatusBadRequest)
-		return
-	}
-
 	number, err := strconv.ParseUint(nodename, 10, 64)
 	if err != nil {
 		log.Fatalf("Error parsing node name: %s", err)
@@ -78,18 +72,30 @@ func (s *nodesServer) doPut(w http.ResponseWriter, r *http.Request) {
 		reqBody.Object.VC = vectorclock.UpdateRecv(nodename, map[string]uint64{nodename: 0})
 	}
 
-	// Insert test value into bucket
-	err = s.boltDB.Put(reqBody.BucketName, reqBody.Object)
-	if err != nil {
-		log.Fatalf("Error inserting into bucket: %s", err)
-	}
-
 	/* TODO: To add ignore if new updated vector clock is outdated?*/
 
-	// TODO: Send replicas to other nodes
+	serverDeadline := time.Now().Add(10 * time.Second)
+	ctxRep, cancel := context.WithDeadline(context.Background(), serverDeadline)
+	defer cancel()
 
-	/*Edit to return a list of objects instead*/
-	json.NewEncoder(w).Encode(reqBody.Object)
+	dataBytes, err := json.Marshal(reqBody.Object)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+
+	putRepReq := &pb.PutRepRequest{
+		Key: reqBody.Object.Key,
+		BucketName: reqBody.BucketName,
+		Data: dataBytes,
+	}
+
+	putRepResult := s.serverPutReplicas(ctxRep, putRepReq)
+
+	if putRepResult.Success {
+		json.NewEncoder(w).Encode(reqBody.Object)
+	} else {
+		http.Error(w, putRepResult.Err.Error(), http.StatusInternalServerError)
+	}
 }
 
 func (s *nodesServer) doGet(w http.ResponseWriter, r *http.Request) {
@@ -122,8 +128,7 @@ func (s *nodesServer) doGet(w http.ResponseWriter, r *http.Request) {
 		Key: reqBody.Key,
 	}
 	
-	getRepResult, err := s.Get(ctxRep, &getRepReq)
-	// log.Println("Am h")
+	getRepResult, err := s.serverGetReplicas(ctxRep, &getRepReq)
 
 	if err != nil {
 		log.Printf("Error getting replicas: %s\n", err.Error())
