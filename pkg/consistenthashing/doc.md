@@ -7,7 +7,7 @@
     - AddNode(name, portnum): adds a node to the Ring with the given name and portnum. Returns a slice of ReallocationNotice (see below) for the caller to handle reallocation
     - SearchKey(key): returns the first (coordinator) Node that is expected to store that key
     - GetPreferenceList(key): returns the preference list for key; calls SearchKey internally
-    - IsNodeResponsibleForKey(key, name) returns true if the physical node is in the preference list for that key; calls GetPreferenceList internally
+    - IsNodeResponsibleForKey(key, id) returns true if the physical node is in the preference list for that key; calls GetPreferenceList internally
     - RemoveNode(name): removes the node with the provided name. The caller is expected to have handled the reallocation of keys before calling this function. The node being removed has to pass all its keys to its previous (virtual) node.
 
 
