@@ -14,7 +14,7 @@ import (
 	"github.com/chuamingkai/50.041DynamoProject/pkg/consistenthashing"
 )
 
-// open ports 9000-9100
+// open ports 9000-9100 for client 
 
 // let's declare a global Keys array
 // that we can then populate in our main function
@@ -22,7 +22,7 @@ import (
 var Keys []Key
 
 
-// HTPP:{"key":"asd", "value":"sdf", "VC":{"9000":"1"}}
+// HTPP:{"Key":"asd", "Value":"sdf"}
 type Key struct {
 	Id      string `json:"Id"`
     Title string `json:"Title"`
@@ -130,8 +130,11 @@ func main() {
 	id := 55 // TODO: Dynamically assign node IDs
 	
 	testEntry := models.Object{
-		IC: "S1234567A",
-		GeoLoc: "23:23:23:23 NW",
+        Key string `json:"key"`
+	    Value string `json:"value"`
+	    VC     map[string]uint64 `json:",omitempty"`
+		//IC: "S1234567A",
+		//GeoLoc: "23:23:23:23 NW",
 	}
 
 	// Open database
@@ -159,4 +162,3 @@ func main() {
 }
 	// getResult := db.Get("testBucket", testEntry.Key)
 	// fmt.Println(getResult)
-}
