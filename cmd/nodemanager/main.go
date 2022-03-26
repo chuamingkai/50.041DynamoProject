@@ -17,6 +17,8 @@ import (
 
 // functions: maintain ring structure, make POST req to node http server to add/delete nodes, handles GET req by client and return the node name for client to approach (send port number first in preference list), handle POST req of new node aka when new node joins updates its ring structure
 
+// current: https://groups.google.com/g/golang-nuts/c/80WQU8u61PI uint64 error
+
 // let's declare a global Keys array that we can then populate in our main function to simulate a database
 var ClientReq []ClientRequest
 var Nodes []UpdateNode
@@ -29,9 +31,9 @@ var manager NodeManager
 
 // object to send to nodes:
 
-// HTPP e.g.:{"key":"954336","type":"GET"} or {"key":"9035","type":"ADD",node_name:"namehere"}
-// format for client to request for a node using key on GET, ADD (key in ADD is the port number) and DELETE solely to manage ring
-// RequestTypes: "GET": find node from key, "ADD": add new node cmd, "DELETE":
+// ClientHTPP e.g.:{"key":"954336","type":"GET"}
+// format for client to request for a node using key on GET
+// RequestTypes: "GET": find node from key
 type ClientRequest struct {
 	Key string `json:"key"`
 	// RequestType string `json:"type"`
@@ -57,6 +59,7 @@ func handleRequests() {
 	myRouter.HandleFunc("/allNodes", returnAllNodes)            // all existing nodes
 	myRouter.HandleFunc("/addNode", addNodeReq).Methods("POST") // managing ADD
 	myRouter.HandleFunc("/delNode", delNodeReq).Methods("POST") // managing DEL
+	myRouter.HandleFunc("/delNode", deleteKey).Methods("POST")  //testing local delete
 	log.Fatal(http.ListenAndServe(":8000", myRouter))
 }
 
@@ -93,17 +96,6 @@ func delNodeReq(w http.ResponseWriter, r *http.Request) {
 	// add new node to the ring
 	fmt.Println("Removing node", article.Key, " from existing ring.")
 	manager.removeNode(article.Key, article.PortNo)
-
-	//test to update local list for HTTP output
-	i := 0 // output index
-	for _, x := range Nodes {
-		if x.PortNo != article.PortNo {
-			// copy and increment index
-			Nodes[i] = x
-			i++
-		}
-	}
-	Nodes = Nodes[:i]
 }
 
 func returnSingleKey(w http.ResponseWriter, r *http.Request) {
@@ -158,6 +150,7 @@ func newRequest(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("The node responsible is at Node ID:", response[0].NodeId, "\n================================================================")
 }
 
+// unused for now
 func deleteKey(w http.ResponseWriter, r *http.Request) {
 	// once again, we will need to parse the path parameters
 	vars := mux.Vars(r)
@@ -166,13 +159,13 @@ func deleteKey(w http.ResponseWriter, r *http.Request) {
 	id := vars["key"]
 
 	// we then need to loop through all our articles
-	for index, key := range ClientReq {
+	for index, key := range Nodes {
 		// if our id path parameter matches one of our
 		// articles
 		if key.Key == id {
 			// updates our Articles array to remove the
 			// article
-			ClientReq = append(ClientReq[:index], ClientReq[index+1:]...)
+			Nodes = append(Nodes[:index], Nodes[index+1:]...)
 		}
 	}
 }
