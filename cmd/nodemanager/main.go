@@ -30,8 +30,8 @@ var manager NodeManager
 
 // object to send to nodes:
 
-// HTPP e.g.:{"key":"954336","type":"GET"} or {}
-// format for client to request for a node using key on GET, ADD and DELETE solely to manage ring
+// HTPP e.g.:{"key":"954336","type":"GET"} or {"key":"9035","type":"ADD",node_name:"namehere"}
+// format for client to request for a node using key on GET, ADD (key in ADD is the port number) and DELETE solely to manage ring
 // RequestTypes: "GET": find node from key, "ADD": add new node cmd, "DELETE":
 type RequestNode struct {
 	Key         string `json:"key"`
@@ -95,10 +95,17 @@ func newRequest(w http.ResponseWriter, r *http.Request) {
 	if article.RequestType == "GET" {
 		// search for expected node
 		fmt.Println("Searching for node for requested key", article.Key)
-		var response = manager.RingList.SearchKey(article.Key)
+		//var response = manager.RingList.SearchKey(article.Key)
+		var response = manager.RingList.GetPreferenceList(article.Key)
+
 		// since we are simply emulating client, print response to terminal
-		fmt.Println("The node responsible is at Node ID:", response.NodeId)
+		//fmt.Println("The node responsible is at Node ID:", response.NodeId,"\n================================================================")
+		// get first node in preference list instead
+		fmt.Println("The node responsible is at Node ID:", response[0].NodeId,"\n================================================================")
+
+
 	} else if article.RequestType == "ADD" {
+		// add new node to the ring
 		if article.NodeName == "" {
 			fmt.Println("Please input a node name!")
 		}else{
@@ -109,7 +116,7 @@ func newRequest(w http.ResponseWriter, r *http.Request) {
 			}
 			manager.addNode(article.NodeName,nodeID)}
 	}
-
+ 
 }
 
 func deleteKey(w http.ResponseWriter, r *http.Request) {
@@ -135,7 +142,7 @@ func deleteKey(w http.ResponseWriter, r *http.Request) {
 func (m *NodeManager) addNode(name string, id uint64) {
 	fmt.Println("adding node", name, " at port:", id)
 	m.RingList.AddNode(name, id)
-	fmt.Println("added!")
+	fmt.Println("added!\n================================================================")
 }
 
 func initManager() {
