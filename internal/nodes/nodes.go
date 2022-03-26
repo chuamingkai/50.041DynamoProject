@@ -24,7 +24,7 @@ import (
 type nodesServer struct {
 	pb.UnimplementedReplicationServer
 	boltDB *bolt.DB
-	ring *consistenthash.Ring
+	ring   *consistenthash.Ring
 	nodeId int64
 	// repServer *replicaServer
 }
@@ -33,13 +33,13 @@ type UpdateNode struct {
 }
 
 type PutRequestBody struct {
-	BucketName string `json:"bucketName"`
-	Object models.Object `json:"object"`
+	BucketName string        `json:"bucketName"`
+	Object     models.Object `json:"object"`
 }
 
 type GetRequestBody struct {
 	BucketName string `json:"bucketName"`
-	Key string `json:"key"`
+	Key        string `json:"key"`
 }
 
 func (s *nodesServer) doPut(w http.ResponseWriter, r *http.Request) {
@@ -84,9 +84,9 @@ func (s *nodesServer) doPut(w http.ResponseWriter, r *http.Request) {
 	}
 
 	putRepReq := &pb.PutRepRequest{
-		Key: reqBody.Object.Key,
+		Key:        reqBody.Object.Key,
 		BucketName: reqBody.BucketName,
-		Data: dataBytes,
+		Data:       dataBytes,
 	}
 
 	putRepResult := s.serverPutReplicas(ctxRep, putRepReq)
@@ -125,9 +125,9 @@ func (s *nodesServer) doGet(w http.ResponseWriter, r *http.Request) {
 
 	getRepReq := pb.GetRepRequest{
 		BucketName: reqBody.BucketName,
-		Key: reqBody.Key,
+		Key:        reqBody.Key,
 	}
-	
+
 	getRepResult, err := s.serverGetReplicas(ctxRep, &getRepReq)
 
 	if err != nil {
@@ -229,7 +229,17 @@ func (s *nodesServer) CreateServer() *http.Server {
 		Addr:    fmt.Sprintf(":%v", s.nodeId), //:{port}
 		Handler: myRouter,
 	}
+
+	go s.ringBackupService()
 	return &server
+}
+
+func (s *nodesServer) ringBackupService() {
+	backupTicker := time.NewTicker(1 * time.Minute) // randomly chosen time
+	for {
+		<-backupTicker.C
+		s.ring.BackupRing(fmt.Sprintf("store/node%dring.bak", s.nodeId))
+	}
 }
 
 func NewNodeServer(port int64, newRing *consistenthash.Ring) *nodesServer {
@@ -240,7 +250,7 @@ func NewNodeServer(port int64, newRing *consistenthash.Ring) *nodesServer {
 	}
 	return &nodesServer{
 		nodeId: port,
-		ring: newRing,
+		ring:   newRing,
 		boltDB: db,
 	}
 }

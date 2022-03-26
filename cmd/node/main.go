@@ -38,13 +38,13 @@ func main() {
 	grpcServer := grpc.NewServer()
 	pb.RegisterReplicationServer(grpcServer, server)
 
-	go func () {
+	go func() {
 		log.Println("Server running at port", portNumber)
 		if err := serverPtr.ListenAndServe(); err != nil {
 			log.Fatalf("Terminating node %v due to error: %v\n", portNumber, err.Error())
 		}
 	}()
-	
+
 
 	// Serve gRPC
 	go func() {
@@ -54,5 +54,5 @@ func main() {
 		}
 	}()
 
-	select{}
+	select {}
 }

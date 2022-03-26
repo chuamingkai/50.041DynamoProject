@@ -50,4 +50,10 @@ The node manager is assigned a fixed port number of 8000.
 The client first contacts the node manager to find out which node stores the key it is interested in. The client then contacts this node directly with its read request. If it receives multiple versions of the object, the client is responsible for merging the vector clock before writing the new value.
 
 ## How to Setup
+### To run a node
+`go run cmd/node/main.go -port [portnum]`
+
+Sets up the node running the HTTP server at `portnum`. This includes setting up the gRPC server and bbolt database.
+
+### To run the Node Manager
 -- TODO

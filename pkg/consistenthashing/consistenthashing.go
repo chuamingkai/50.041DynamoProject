@@ -1,10 +1,14 @@
 package consistenthash
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/md5"
 	"fmt"
 	"math/big"
+	"os"
+	"strconv"
+	"strings"
 )
 
 const NUM_VIRTUAL_NODES int = 3  // TODO: probably slap this in some config file later
@@ -243,4 +247,96 @@ func (r *Ring) RemoveNode(name string) {
 		r.Nodes.Length--
 	}
 	delete(r.NodeMap, name)
+}
+
+// ImportRingFromFile constructs a Ring based on data from a file specified by filename
+// File Format:
+// name,id\n
+// name,id\n
+// name,id\n
+// ...
+// \n
+// vname,id\n
+// vname,id\n
+// ...
+func ImportRingFromFile(filename string) (*Ring, error) {
+	r := NewRing()
+	f, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	tmpMap := make(map[uint64]string)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if len(line) == 0 {
+			break
+		}
+		split := strings.Split(line, ",")
+		id, e := strconv.ParseUint(split[1], 10, 64)
+		if e != nil {
+			return nil, e
+		}
+		tmpMap[id] = split[0]
+		r.NodeMap[split[0]] = newNodeInfo(id, make([]*VirtualNode, 0))
+	}
+
+	var prev *VirtualNode
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "\n" {
+			break
+		}
+		split := strings.Split(line, ",")
+		id, e := strconv.ParseUint(split[1], 10, 64)
+		if e != nil {
+			return nil, e
+		}
+		curr := newVirtualNode(split[0], id)
+		if prev != nil {
+			prev.Next = curr
+			curr.Prev = prev
+		}
+		if r.Nodes.Head == nil {
+			r.Nodes.Head = curr
+		}
+		physical := r.NodeMap[tmpMap[id]]
+		physical.VirtualNodes = append(physical.VirtualNodes, curr)
+		prev = curr
+		r.Nodes.Length++
+	}
+	return r, nil
+}
+
+// BackupRing outputs the current ring state into a file specified by filename
+// File Format:
+// name,id\n
+// name,id\n
+// name,id\n
+// ...
+// \n
+// vname,id\n
+// vname,id\n
+// ...
+func (r *Ring) BackupRing(filename string) error {
+	f, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0744)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	for k, v := range r.NodeMap {
+		f.WriteString(fmt.Sprintf("%s,%d\n", k, v.NodeId))
+	}
+
+	f.WriteString("\n")
+	node := r.Nodes.Head
+	for node.Next != nil {
+		f.WriteString(fmt.Sprintf("%s,%d\n", node.VirtualName, node.NodeId))
+		node = node.Next
+	}
+	f.WriteString(fmt.Sprintf("%s,%d\n", node.VirtualName, node.NodeId))
+	return nil
 }
