@@ -12,6 +12,7 @@ message PutRepRequest {
     string key = 1;
     bytes data = 2;
     string bucketName = 3;
+    int64 senderId = 4;
 }
 
 message PutRepResponse {
