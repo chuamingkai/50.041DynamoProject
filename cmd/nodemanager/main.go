@@ -17,11 +17,9 @@ import (
 
 // functions: maintain ring structure, make POST req to node http server to add/delete nodes, handles GET req by client and return the node name for client to approach (send port number first in preference list), handle POST req of new node aka when new node joins updates its ring structure
 
-// current: https://groups.google.com/g/golang-nuts/c/80WQU8u61PI uint64 error
-
-// let's declare a global Keys array that we can then populate in our main function to simulate a database
+// let's declare a global Keys array that we can then populate in our main function to simulate a database for client request
 var ClientReq []ClientRequest
-var Nodes []UpdateNode
+var Nodes []UpdateNode //not displayed
 
 type NodeManager struct {
 	RingList consistenthash.Ring
@@ -31,13 +29,10 @@ var manager NodeManager
 
 // object to send to nodes:
 
-// ClientHTPP e.g.:{"key":"954336","type":"GET"}
+// ClientHTPP e.g.:{"key":"A1234"}
 // format for client to request for a node using key on GET
-// RequestTypes: "GET": find node from key
 type ClientRequest struct {
 	Key string `json:"key"`
-	// RequestType string `json:"type"`
-	// NodeName string `json:"node_name,omitempty"`
 }
 
 type UpdateNode struct {
@@ -46,20 +41,23 @@ type UpdateNode struct {
 }
 
 func homePage(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Client landing!")
+	fmt.Fprintf(w, "Node manager landing @ 8000!\n")
+	fmt.Fprintf(w, "For clients, make a POST request to '/client' with a key. The manager will return the node you will need to communicate with.\n")
+	fmt.Fprintf(w, "To add a node to the ring, make a POST request to '/addNode' with a key and port number.\n")
+	fmt.Fprintf(w, "To remove a node from the ring, make a POST request to '/removeNode' with a key and port number.\n")
 	fmt.Println("Endpoint Hit: nodemanager http server")
 }
 
 func handleRequests() {
 	myRouter := mux.NewRouter().StrictSlash(true)
 	myRouter.HandleFunc("/", homePage)
-	myRouter.HandleFunc("/allClient", returnAllClientReq)      // all client reqs
-	myRouter.HandleFunc("/client", newRequest).Methods("POST") //allow client to post to manager
+	myRouter.HandleFunc("/allClient", returnAllClientReq)      // all client reqs printed to localhost
+	myRouter.HandleFunc("/client", newRequest).Methods("POST") //allow client to post to manager to get node portno
 	myRouter.HandleFunc("/client/{key}", returnSingleKey)
-	myRouter.HandleFunc("/allNodes", returnAllNodes)            // all existing nodes
+	//myRouter.HandleFunc("/allNodes", returnAllNodes)            // all existing nodes -- doesnt work yet
 	myRouter.HandleFunc("/addNode", addNodeReq).Methods("POST") // managing ADD
 	myRouter.HandleFunc("/delNode", delNodeReq).Methods("POST") // managing DEL
-	myRouter.HandleFunc("/delNode", deleteKey).Methods("POST")  //testing local delete
+	//myRouter.HandleFunc("/delNode", deleteKey).Methods("POST")  // testing local array delete
 	log.Fatal(http.ListenAndServe(":8000", myRouter))
 }
 
@@ -77,7 +75,7 @@ func addNodeReq(w http.ResponseWriter, r *http.Request) {
 	Nodes = append(Nodes, article)
 	json.NewEncoder(w).Encode(&article)
 	// add new node to the ring
-	fmt.Println("Adding node", article.Key, " to existing ring.")
+	fmt.Println("Adding node", article.PortNo, " to existing ring.")
 	manager.addNode(article.Key, article.PortNo)
 }
 
@@ -139,14 +137,11 @@ func newRequest(w http.ResponseWriter, r *http.Request) {
 	ClientReq = append(ClientReq, article)
 	json.NewEncoder(w).Encode(&article)
 
-	// search for expected node
+	// search for expected node on pref list
 	fmt.Println("Searching for node for requested key", article.Key)
-	//var response = manager.RingList.SearchKey(article.Key)
 	var response = manager.RingList.GetPreferenceList(article.Key)
 
 	// since we are simply emulating client, print response to terminal
-	//fmt.Println("The node responsible is at Node ID:", response.NodeId,"\n================================================================")
-	// get first node in preference list instead
 	fmt.Println("The node responsible is at Node ID:", response[0].NodeId, "\n================================================================")
 }
 
@@ -173,13 +168,16 @@ func deleteKey(w http.ResponseWriter, r *http.Request) {
 func (m *NodeManager) removeNode(name string, id uint64) {
 	fmt.Println("Removing node", name, " at port:", id)
 	m.RingList.RemoveNode(name)
-	fmt.Print("Deleted!")
+	fmt.Print("Deleted! Current nodes: ")
+	fmt.Println(m.RingList.Nodes.TraverseAndPrint())
 }
 
 func (m *NodeManager) addNode(name string, id uint64) {
 	fmt.Println("Adding node", name, " at port:", id)
 	m.RingList.AddNode(name, id)
-	fmt.Println("added!\n================================================================")
+	fmt.Println("Added! Current nodes: ")
+	fmt.Println(m.RingList.Nodes.TraverseAndPrint())
+	fmt.Println("\n================================================================")
 }
 
 func initManager() {
@@ -191,7 +189,7 @@ func main() {
 	nodeNames := []string{"1", "2", "3", "4"}
 	nodeNumbers := []uint64{9030, 9040, 9050, 9060}
 	initManager()
-	fmt.Println("manager: ", manager)
+	fmt.Println("Manager running at 8000! ")
 
 	testManager(nodeNames, nodeNumbers)
 	//populate with dummy data
@@ -203,9 +201,8 @@ func main() {
 func testManager(nodenames []string, nodeIDs []uint64) {
 	for i := 0; i < len(nodenames); i++ {
 		manager.addNode(nodenames[i], nodeIDs[i])
-		fmt.Println("returned from adding node ", nodeIDs[i])
+		fmt.Println("Returned from adding node ", nodeIDs[i], " to local list.")
 	}
-
 }
 
 /*
