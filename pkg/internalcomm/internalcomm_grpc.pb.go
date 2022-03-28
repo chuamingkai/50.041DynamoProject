@@ -133,5 +133,5 @@ var Replication_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "grpc.proto",
+	Metadata: "pkg/internalcomm/internalcomm.proto",
 }

@@ -1,6 +1,7 @@
 package nodes
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -8,145 +9,155 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
-	"github.com/chuamingkai/50.041DynamoProject/internal/bolt"
 	"github.com/chuamingkai/50.041DynamoProject/internal/models"
+	"github.com/chuamingkai/50.041DynamoProject/pkg/bolt"
 	consistenthash "github.com/chuamingkai/50.041DynamoProject/pkg/consistenthashing"
+	pb "github.com/chuamingkai/50.041DynamoProject/pkg/internalcomm"
 	"github.com/chuamingkai/50.041DynamoProject/pkg/vectorclock"
 
 	"github.com/gorilla/mux"
 )
 
-var db bolt.DB
-var a *consistenthash.Ring
-var nodeId int64
+// TODO: Name this smth else
+type nodesServer struct {
+	pb.UnimplementedReplicationServer
+	boltDB *bolt.DB
+	ring *consistenthash.Ring
+	nodeId int64
+	// repServer *replicaServer
+}
 type UpdateNode struct {
 	NodeName string `json:"nodename"`
 }
 
+type PutRequestBody struct {
+	BucketName string `json:"bucketName"`
+	Object models.Object `json:"object"`
+}
 
-func createSingleEntry(w http.ResponseWriter, r *http.Request) {
+type GetRequestBody struct {
+	BucketName string `json:"bucketName"`
+	Key string `json:"key"`
+}
 
-	/* TODO: To add check for if node handles key*/
+func (s *nodesServer) doPut(w http.ResponseWriter, r *http.Request) {
 	nodename := strings.Trim(r.Host, "localhost:")
 
-	reqBody, _ := ioutil.ReadAll(r.Body)
-	var newEntry models.Object
-	json.Unmarshal(reqBody, &newEntry)
+	reqBodyBytes, _ := ioutil.ReadAll(r.Body)
+	var reqBody PutRequestBody
+	json.Unmarshal(reqBodyBytes, &reqBody)
+
+	// Check if bucket name is provided
+	if reqBody.BucketName == "" {
+		http.Error(w, "Missing bucket name", http.StatusBadRequest)
+		return
+	}
 
 	number, err := strconv.ParseUint(nodename, 10, 64)
 	if err != nil {
 		log.Fatalf("Error parsing node name: %s", err)
 	}
-	if !a.IsNodeResponsibleForKey(newEntry.Key, number) {
-		http.Error(w, "Node is not responsible for key!", 400)
+
+	// Check if node handles key
+	if !s.ring.IsNodeResponsibleForKey(reqBody.Object.Key, number) {
+		http.Error(w, "Node is not responsible for key!", http.StatusBadRequest)
 		return
 	}
 
-	if newEntry.VC != nil {
-		newEntry.VC = vectorclock.UpdateRecv(nodename, newEntry.VC)
+	if reqBody.Object.VC != nil {
+		reqBody.Object.VC = vectorclock.UpdateRecv(nodename, reqBody.Object.VC)
 	} else {
-		newEntry.VC = vectorclock.UpdateRecv(nodename, map[string]uint64{nodename: 0})
-	}
-
-	// Insert test value into bucket
-	err = db.Put("testBucket", newEntry)
-	if err != nil {
-		log.Fatalf("Error inserting into bucket: %s", err)
+		reqBody.Object.VC = vectorclock.UpdateRecv(nodename, map[string]uint64{nodename: 0})
 	}
 
 	/* TODO: To add ignore if new updated vector clock is outdated?*/
 
-	// TODO: Create context to get replicas
-	// clientDeadline := time.Now().Add(time.Second * 5)
-	// ctxRep, cancelRep := context.WithDeadline(context.TODO(), clientDeadline)
-	// defer cancelRep()
+	serverDeadline := time.Now().Add(10 * time.Second)
+	ctxRep, cancel := context.WithDeadline(context.Background(), serverDeadline)
+	defer cancel()
 
-	// TODO: Send replicas to other nodes
-	// request := &rp.PutRepRequest{
-	// 	Key: []byte(newEntry.Key),
-	// 	Data: []byte(newEntry.Value), // Not sure if this is correct
-		
-	// }
-	// preferenceList := a.GetPreferenceList(newEntry.Key)
-	// for _, virtualNode := range preferenceList {
-	// 	go func (virtualNodeId uint64)  {
-	// 		if virtualNodeId== uint64(nodeId) {
-	// 			// Insert test value into bucket
-	// 			err = db.Put("testBucket", newEntry)
-	// 			if err != nil {
-	// 				log.Fatalf("Error inserting into bucket: %s", err)
-	// 			}
-	// 		} else {
-	// 			// Send replica to other nodes
-	// 			var peer rp.ReplicationClient
-	// 			// var response *rp.PutRepResponse
-	
-	// 			peer.PutReplica(ctxRep, request)
-	// 		}
-	// 	}(virtualNode.NodeId)
-	// }
+	dataBytes, err := json.Marshal(reqBody.Object)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 
-	// TODO: Check if replica has been successfully received by servers in preference list
+	putRepReq := &pb.PutRepRequest{
+		Key: reqBody.Object.Key,
+		BucketName: reqBody.BucketName,
+		Data: dataBytes,
+	}
 
-	/*Edit to return a list of objects instead*/
-	json.NewEncoder(w).Encode(newEntry)
+	putRepResult := s.serverPutReplicas(ctxRep, putRepReq)
+
+	if putRepResult.Success {
+		json.NewEncoder(w).Encode(reqBody.Object)
+	} else {
+		http.Error(w, putRepResult.Err.Error(), http.StatusInternalServerError)
+	}
 }
 
-func returnSingleEntry(w http.ResponseWriter, r *http.Request) {
+func (s *nodesServer) doGet(w http.ResponseWriter, r *http.Request) {
+	reqBodyBytes, _ := ioutil.ReadAll(r.Body)
+	var reqBody GetRequestBody
+	json.Unmarshal(reqBodyBytes, &reqBody)
+
+	// Check if bucket name and/or key is provided
+	if reqBody.BucketName == "" || reqBody.Key == "" {
+		http.Error(w, "Missing key/bucket name", http.StatusBadRequest)
+		return
+	}
+
 	// Check if node handles key
 	nodename := strings.Trim(r.Host, "localhost:")
 	number, _ := strconv.ParseUint(nodename, 10, 64)
 
-	vars := mux.Vars(r)
-	key := vars["ic"]
-
-	if !a.IsNodeResponsibleForKey(key, number) {
-		http.Error(w, "Node is not responsible for key!", 400)
+	if !s.ring.IsNodeResponsibleForKey(reqBody.Key, number) {
+		http.Error(w, "Node is not responsible for key!", http.StatusBadRequest)
 		return
 	}
-	// id, err := strconv.Atoi(nodename)
-	fmt.Println(a.GetPreferenceList(key))
 
-	// Read from bucket
-	value, err := db.Get("testBucket", key)
-	if err != nil {
-		log.Fatal("Error getting from bucket:", err)
+	// Get replicas from servers in preference list
+	serverDeadline := time.Now().Add(10 * time.Second)
+	ctxRep, cancel := context.WithDeadline(context.Background(), serverDeadline)
+	defer cancel()
+
+	getRepReq := pb.GetRepRequest{
+		BucketName: reqBody.BucketName,
+		Key: reqBody.Key,
 	}
-
-	// TODO: Get replicas from servers in preference list
-	// preferenceList := a.GetPreferenceList(key)
-	// replicas := make([]rp.GetRepResponse, 100) // TODO: Figure out how many replicas needed
-	// request := rp.GetRepRequest{
-	// 	Key: []byte(key),
-	// }
-
-	// for _, virtualNode := range preferenceList {
-	// 	go func(virtualNodeId int64) {
-	// 		var dataReplica *rp.GetRepResponse
-	// 		var err error
-
-	// 		if virtualNodeId != nodeId {
-	// 			var peer rp.ReplicationClient
-	// 			// var response *rp.PutRepResponse
 	
-	// 			peer.PutReplica(ctxRep, request)
-	// 		}
-	// 	}(int64(virtualNode.NodeId))
-	// }
+	getRepResult, err := s.serverGetReplicas(ctxRep, &getRepReq)
 
-	// Send list if have conflicts, else send data
-
-	if value.Key != "" {
-		// TODO: Encode list of conflicting replicas
-		json.NewEncoder(w).Encode(value)
+	if err != nil {
+		log.Printf("Error getting replicas: %s\n", err.Error())
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	} else {
-		http.Error(w, "Value not found!", 404)
+		json.NewEncoder(w).Encode(getRepResult)
 	}
 
 }
 
-func updateAddNode(w http.ResponseWriter, r *http.Request) {
+func (s *nodesServer) doCreateBucket(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	var newBucketName string
+	var ok bool
+	if newBucketName, ok = vars["bucketName"]; !ok {
+		http.Error(w, "Missing bucket name", http.StatusBadRequest)
+	}
+
+	// TODO: Create bucket on replicas as well
+	err := s.boltDB.CreateBucket(newBucketName)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	} else {
+		w.WriteHeader(http.StatusCreated)
+	}
+}
+
+func (s *nodesServer) updateAddNode(w http.ResponseWriter, r *http.Request) {
 	reqBody, _ := ioutil.ReadAll(r.Body)
 
 	var newnode UpdateNode
@@ -154,22 +165,25 @@ func updateAddNode(w http.ResponseWriter, r *http.Request) {
 	exist := false
 	number, err := strconv.ParseUint(newnode.NodeName, 10, 64)
 	if err == nil {
-		for _, n := range a.NodeMap {
+		for _, n := range s.ring.NodeMap {
 			if n.NodeId == number {
 				exist = true
 			}
 		}
 		if !exist {
-			a.AddNode(newnode.NodeName, number)
-			fmt.Println(a.Nodes.TraverseAndPrint())
+			s.ring.AddNode(newnode.NodeName, number)
+			log.Printf("Node %s added to ring.\n", newnode.NodeName)
+			// fmt.Println(s.ring.Nodes.TraverseAndPrint())
+			json.NewEncoder(w).Encode(s.ring.Nodes.TraverseAndPrint())
 		} else {
-			http.Error(w, "Node already exists!", 503)
+			http.Error(w, "Node already exists!", http.StatusBadRequest)
 		}
+	} else {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
-	json.NewEncoder(w).Encode(newnode)
 }
 
-func updateDelNode(w http.ResponseWriter, r *http.Request) {
+func (s *nodesServer) updateDelNode(w http.ResponseWriter, r *http.Request) {
 	reqBody, _ := ioutil.ReadAll(r.Body)
 
 	var newnode UpdateNode
@@ -177,57 +191,56 @@ func updateDelNode(w http.ResponseWriter, r *http.Request) {
 	exist := false
 	number, err := strconv.ParseUint(newnode.NodeName, 10, 64)
 	if err == nil {
-		for _, n := range a.NodeMap {
+		for _, n := range s.ring.NodeMap {
 			if n.NodeId == number {
 				exist = true
 			}
 		}
 		if exist {
-			a.RemoveNode(newnode.NodeName)
-			fmt.Println(a.Nodes.TraverseAndPrint())
+			s.ring.RemoveNode(newnode.NodeName)
+			fmt.Println(s.ring.Nodes.TraverseAndPrint())
 		} else {
-			http.Error(w, "Node doesn't exists!", 503)
+			http.Error(w, "Node doesn't exists!", http.StatusServiceUnavailable)
 		}
 	}
 	json.NewEncoder(w).Encode(newnode)
 }
 
-func CreateServer(port int, newRing *consistenthash.Ring) *http.Server {
-	fmt.Println("Setting up node at port", port)
-	nodeId = int64(port)
-	var err error
-
-	// Open database
-	db, err = bolt.ConnectDB(port)
-	if err != nil {
-		log.Fatal("Error connecting to Bolt database:", err)
-	}
-	// defer db.DB.Close()
-
-	// Add ring
-	a = newRing
-
-	// Create bucket
-	err = db.CreateBucket("testBucket")
-	if err != nil {
-		log.Fatal("Error creating bucket:", err)
-	}
+func (s *nodesServer) CreateServer() *http.Server {
+	log.Println("Setting up node at port", s.nodeId)
 
 	/*creates a new instance of a mux router*/
 	myRouter := mux.NewRouter().StrictSlash(true)
 
-	myRouter.HandleFunc("/addnode", updateAddNode).Methods("POST")
-	myRouter.HandleFunc("/delnode", updateDelNode).Methods("POST")
+	// Node handling
+	myRouter.HandleFunc("/addnode", s.updateAddNode).Methods("POST")
+	myRouter.HandleFunc("/delnode", s.updateDelNode).Methods("POST")
 
 	/*write new entry*/
-	myRouter.HandleFunc("/data", createSingleEntry).Methods("POST")
+	myRouter.HandleFunc("/data", s.doPut).Methods("POST")
 
 	/*return single entry*/
-	myRouter.HandleFunc("/data/{ic}", returnSingleEntry)
+	myRouter.HandleFunc("/data", s.doGet).Methods("GET")
+
+	// Bucket creation
+	myRouter.HandleFunc("/db/{bucketName}", s.doCreateBucket).Methods("POST")
 
 	server := http.Server{
-		Addr:    fmt.Sprintf(":%v", port), //:{port}
+		Addr:    fmt.Sprintf(":%v", s.nodeId), //:{port}
 		Handler: myRouter,
 	}
 	return &server
+}
+
+func NewNodeServer(port int64, newRing *consistenthash.Ring) *nodesServer {
+	// Open database
+	db, err := bolt.ConnectDB(int(port))
+	if err != nil {
+		log.Fatal("Error connecting to Bolt database:", err)
+	}
+	return &nodesServer{
+		nodeId: port,
+		ring: newRing,
+		boltDB: db,
+	}
 }
