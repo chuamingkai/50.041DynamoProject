@@ -4,10 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/gob"
-	"errors"
+	"encoding/json"
+	"fmt"
 	"log"
+	"strconv"
+	"time"
 
+	"github.com/chuamingkai/50.041DynamoProject/internal/models"
 	pb "github.com/chuamingkai/50.041DynamoProject/pkg/internalcomm"
+	"github.com/chuamingkai/50.041DynamoProject/pkg/vectorclock"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -17,7 +22,7 @@ import (
 func (s *nodesServer) doGetReplica(bucketName, key string) ([]byte, bool, error) {
 	// Check if bucket exists
 	if !s.boltDB.BucketExists(bucketName) {
-		return nil, false, errors.New("Bucket does not exist on node" + string(s.nodeId))
+		return nil, false, fmt.Errorf("bucket does not exist on node %v", s.nodeId)
 	}
 
 	replica, err := s.boltDB.Get(bucketName, key)
@@ -28,26 +33,52 @@ func (s *nodesServer) doGetReplica(bucketName, key string) ([]byte, bool, error)
 	}
 }
 
-func (s *nodesServer) doPutReplica(bucketName, key string, data []byte) error {
+func (s *nodesServer) doPutReplica(bucketName, key string, data []byte, senderId int64) error {
 	if !s.boltDB.BucketExists(bucketName) {
-		return errors.New("Bucket does not exist on node" + string(s.nodeId))
+		// Create bucket if it does not exist
+		if err := s.boltDB.CreateBucket(bucketName); err != nil {
+			return err
+		}
+		
 	}
-	// Get old value to compare versions
-	// currentReplicaBytes, found, err := s.doGetReplica(bucketName, key)
-	// if err != nil {
-	// 	return err
-	// }
 
-	// currentReplicaBuffer := bytes.NewBuffer(currentReplicaBytes)
-	// var currentReplica models.Object
-	// gob.NewDecoder(currentReplicaBuffer).Decode(&currentReplica)
+	var incomingRepObject models.Object
+	if err := json.Unmarshal(data, &incomingRepObject); err != nil {
+		return err
+	}
+	currentTime := time.Now()
+	nodename := strconv.Itoa(int(senderId))
 
-	// if !found || compareVectorClocks(currentReplica.VC, newReplica.VC) {
-	// 	err = s.boltDB.Put(bucketName, newReplica)
-	// }
-	// return err
 	// TODO: Vector clock comparison to avoid versioning conflicts
-	return s.boltDB.Put(bucketName, key, data)
+	existingRep, err := s.boltDB.Get(bucketName, key)
+	if err != nil {
+		return err
+	} else if existingRep != nil {
+		var existingRepObject models.Object
+		if err := json.Unmarshal(existingRep, &existingRepObject); err != nil {
+			return err
+		}
+		incomingRepObject.CreatedOn = existingRepObject.CreatedOn
+		incomingRepObject.LastModifiedOn = currentTime
+		incomingRepObject.VC = vectorclock.UpdateRecv(nodename, existingRepObject.VC)
+
+		incomingRepBytes, err := json.Marshal(incomingRepObject)
+		if err != nil {
+			return err
+		}
+		
+		return s.boltDB.Put(bucketName, key, incomingRepBytes)
+	} else {
+		incomingRepObject.CreatedOn = currentTime
+		incomingRepObject.LastModifiedOn = currentTime
+		incomingRepObject.VC = vectorclock.UpdateRecv(nodename, map[string]uint64{nodename: 0})
+
+		incomingRepBytes, err := json.Marshal(incomingRepObject)
+		if err != nil {
+			return err
+		}
+		return s.boltDB.Put(bucketName, key, incomingRepBytes)
+	}
 }
 
 
@@ -57,7 +88,7 @@ func (s *nodesServer) GetReplica(ctx context.Context, req *pb.GetRepRequest) (*p
 
 	// TODO: Figure out what to do when the replica's key is not found
 	replica, found, err := s.doGetReplica(req.BucketName, req.Key)
-	log.Printf("Replica for key '%v' found: %s\n", req.Key, replica)
+	log.Printf("Replica for key '%v' found\n", req.Key)
 	if err != nil {
 		return nil, err
 	} else if !found {
@@ -77,7 +108,7 @@ func (s *nodesServer) GetReplica(ctx context.Context, req *pb.GetRepRequest) (*p
 func (s *nodesServer) PutReplica(ctx context.Context, req *pb.PutRepRequest) (*pb.PutRepResponse, error) {
 	log.Printf("Received PUT request for replica for key '%s', val: %s\n", req.Key, req.Data)
 
-	err := s.doPutReplica(req.BucketName, req.Key, req.Data)
+	err := s.doPutReplica(req.BucketName, req.Key, req.Data, req.SenderId)
 	if err != nil {
 		return &pb.PutRepResponse{IsDone: false}, err
 	}
@@ -87,12 +118,6 @@ func (s *nodesServer) PutReplica(ctx context.Context, req *pb.PutRepRequest) (*p
 }
 
 // TODO: Implement comparison of vector clocks
-func compareVectorClocks(currentVC, incomingVC map[string]uint64) bool {
-	return true
-}
-
-// func newReplicaServer(boltDB *bolt.DB) *replicaServer {
-// 	return &replicaServer{
-// 		boltDB: boltDB,
-// 	}
+// func compareVectorClocks(currentVC, incomingVC map[string]uint64) bool {
+// 	return true
 // }

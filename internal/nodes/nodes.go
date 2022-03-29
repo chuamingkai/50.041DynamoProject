@@ -1,21 +1,18 @@
 package nodes
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/chuamingkai/50.041DynamoProject/internal/models"
 	"github.com/chuamingkai/50.041DynamoProject/pkg/bolt"
 	consistenthash "github.com/chuamingkai/50.041DynamoProject/pkg/consistenthashing"
 	pb "github.com/chuamingkai/50.041DynamoProject/pkg/internalcomm"
-	"github.com/chuamingkai/50.041DynamoProject/pkg/vectorclock"
 
 	"github.com/gorilla/mux"
 )
@@ -26,15 +23,14 @@ type nodesServer struct {
 	boltDB *bolt.DB
 	ring   *consistenthash.Ring
 	nodeId int64
-	// repServer *replicaServer
 }
 type UpdateNode struct {
 	NodeName string `json:"nodename"`
 }
 
 type PutRequestBody struct {
-	BucketName string        `json:"bucketName"`
-	Object     models.Object `json:"object"`
+	BucketName string         `json:"bucketName"`
+	Object     *models.Object `json:"object"`
 }
 
 type GetRequestBody struct {
@@ -43,8 +39,6 @@ type GetRequestBody struct {
 }
 
 func (s *nodesServer) doPut(w http.ResponseWriter, r *http.Request) {
-	nodename := strings.Trim(r.Host, "localhost:")
-
 	reqBodyBytes, _ := ioutil.ReadAll(r.Body)
 	var reqBody PutRequestBody
 	json.Unmarshal(reqBodyBytes, &reqBody)
@@ -55,44 +49,25 @@ func (s *nodesServer) doPut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	number, err := strconv.ParseUint(nodename, 10, 64)
-	if err != nil {
-		log.Fatalf("Error parsing node name: %s", err)
-	}
-
 	// Check if node handles key
-	if !s.ring.IsNodeResponsibleForKey(reqBody.Object.Key, number) {
+	if !s.ring.IsNodeResponsibleForKey(reqBody.Object.Key, uint64(s.nodeId)) {
 		http.Error(w, "Node is not responsible for key!", http.StatusBadRequest)
 		return
 	}
 
-	if reqBody.Object.VC != nil {
-		reqBody.Object.VC = vectorclock.UpdateRecv(nodename, reqBody.Object.VC)
-	} else {
-		reqBody.Object.VC = vectorclock.UpdateRecv(nodename, map[string]uint64{nodename: 0})
-	}
+	log.Printf("Received PUT request from clients for key %s, value %v\n", reqBody.Object.Key, reqBody.Object.Value)
 
 	/* TODO: To add ignore if new updated vector clock is outdated?*/
-
-	serverDeadline := time.Now().Add(10 * time.Second)
-	ctxRep, cancel := context.WithDeadline(context.Background(), serverDeadline)
-	defer cancel()
 
 	dataBytes, err := json.Marshal(reqBody.Object)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 
-	putRepReq := &pb.PutRepRequest{
-		Key:        reqBody.Object.Key,
-		BucketName: reqBody.BucketName,
-		Data:       dataBytes,
-	}
-
-	putRepResult := s.serverPutReplicas(ctxRep, putRepReq)
+	putRepResult := s.serverPutReplicas(reqBody.BucketName, reqBody.Object.Key, dataBytes)
 
 	if putRepResult.Success {
-		json.NewEncoder(w).Encode(reqBody.Object)
+		w.WriteHeader(http.StatusCreated)
 	} else {
 		http.Error(w, putRepResult.Err.Error(), http.StatusInternalServerError)
 	}
@@ -110,25 +85,14 @@ func (s *nodesServer) doGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if node handles key
-	nodename := strings.Trim(r.Host, "localhost:")
-	number, _ := strconv.ParseUint(nodename, 10, 64)
-
-	if !s.ring.IsNodeResponsibleForKey(reqBody.Key, number) {
+	if !s.ring.IsNodeResponsibleForKey(reqBody.Key, uint64(s.nodeId)) {
 		http.Error(w, "Node is not responsible for key!", http.StatusBadRequest)
 		return
 	}
 
-	// Get replicas from servers in preference list
-	serverDeadline := time.Now().Add(10 * time.Second)
-	ctxRep, cancel := context.WithDeadline(context.Background(), serverDeadline)
-	defer cancel()
+	log.Printf("Received GET request from clients for key %s\n", reqBody.Key)
 
-	getRepReq := pb.GetRepRequest{
-		BucketName: reqBody.BucketName,
-		Key:        reqBody.Key,
-	}
-
-	getRepResult, err := s.serverGetReplicas(ctxRep, &getRepReq)
+	getRepResult, err := s.serverGetReplicas(reqBody.BucketName, reqBody.Key)
 
 	if err != nil {
 		log.Printf("Error getting replicas: %s\n", err.Error())
@@ -148,7 +112,6 @@ func (s *nodesServer) doCreateBucket(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Missing bucket name", http.StatusBadRequest)
 	}
 
-	// TODO: Create bucket on replicas as well
 	err := s.boltDB.CreateBucket(newBucketName)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
