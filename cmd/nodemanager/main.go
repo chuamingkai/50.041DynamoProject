@@ -12,7 +12,11 @@ import (
 	consistenthash "github.com/chuamingkai/50.041DynamoProject/pkg/consistenthashing"
 )
 
+<<<<<<< HEAD
+// open ports 9000-9100 for client 
+=======
 // open ports 9000-9100
+>>>>>>> 7123d86285d92c11d81f0aae7158692c23c81c14
 
 // let's declare a global Keys array
 // that we can then populate in our main function
@@ -20,7 +24,7 @@ import (
 var Keys []Key
 
 
-// HTPP:{"key":"asd", "value":"sdf", "VC":{"9000":"1"}}
+// HTPP:{"Key":"asd", "Value":"sdf"}
 type Key struct {
 	Id      string `json:"Id"`
     Title string `json:"Title"`
@@ -116,6 +120,10 @@ func main() {
         Key{Id: "1", Title: "Hello", Desc: "Article Description", Content: "Article Content"},
         Key{Id: "2", Title: "Hello 2", Desc: "Article Description", Content: "Article Content"},
     }
+<<<<<<< HEAD
+
+=======
+>>>>>>> 7123d86285d92c11d81f0aae7158692c23c81c14
 
 	handleRequests()
 
@@ -126,6 +134,41 @@ func main() {
 	
 	// id := 55 // TODO: Dynamically assign node IDs
 	
+<<<<<<< HEAD
+	testEntry := models.Object{
+        Key string `json:"key"`
+	    Value string `json:"value"`
+	    VC     map[string]uint64 `json:",omitempty"`
+		//IC: "S1234567A",
+		//GeoLoc: "23:23:23:23 NW",
+	}
+
+	// Open database
+	db, err := bolt.ConnectDB(id)
+	if err != nil {
+		log.Fatalf("Error opening database: %s", err)
+	}
+	defer db.DB.Close()
+
+	// Create bucket
+	err = db.CreateBucket("testBucket")
+	if err != nil {
+		log.Fatalf("Error creating bucket: %s", err)
+	}
+
+	// Insert test value into bucket
+	err = db.Put("testBucket", testEntry)
+	if err != nil {
+		log.Fatalf("Error inserting into bucket: %s", err)
+	}
+
+	// Read from bucket
+	value := db.Get("testBucket", testEntry.IC)
+	fmt.Printf("Value at key %s: %s", testEntry.IC, value)
+}
+	// getResult := db.Get("testBucket", testEntry.Key)
+	// fmt.Println(getResult)
+=======
 	// testEntry := models.Object{
 	// 	IC: "S1234567A",
 	// 	GeoLoc: "23:23:23:23 NW",
@@ -154,3 +197,4 @@ func main() {
 	// value := db.Get("testBucket", testEntry.IC)
 	// fmt.Printf("Value at key %s: %s", testEntry.IC, value)
 }
+>>>>>>> 7123d86285d92c11d81f0aae7158692c23c81c14
