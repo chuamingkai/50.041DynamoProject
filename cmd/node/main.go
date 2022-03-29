@@ -13,22 +13,34 @@ import (
 	"google.golang.org/grpc"
 )
 
-// go run cmd/node/main.go -port PORT_NUMBER
+// go run cmd/node/main.go -port PORT_NUMBER [-file FILE]
 func main() {
 	portPtr := flag.Int("port", 9000, "node port number")
+	ringFile := flag.String("file", "", "file to import ring from")
+
 	flag.Parse()
 
 	portNumber := *portPtr
-	ring := consistenthash.NewRing()
-
-	// TODO: Node discovery
-	ring.AddNode(strconv.Itoa(portNumber), uint64(portNumber))
+	file := *ringFile
+	var ring *consistenthash.Ring
+	if file != "" {
+		r, err := consistenthash.ImportRingFromFile(file)
+		if err != nil {
+			log.Fatal("Error importing ring from file ", file)
+		}
+		fmt.Printf("Ring imported: %s\n", r.Nodes.TraverseAndPrint())
+		ring = r
+	} else {
+		ring = consistenthash.NewRing()
+		// TODO: Node discovery
+		ring.AddNode(strconv.Itoa(portNumber), uint64(portNumber))
+	}
 
 	server := nodes.NewNodeServer(int64(portNumber), ring)
 	serverPtr := server.CreateServer()
 
 	// Create gRPC listener
-	grpcAddress := fmt.Sprintf("localhost:%v", *portPtr - 3000)
+	grpcAddress := fmt.Sprintf("localhost:%v", *portPtr-3000)
 	grpcListener, err := net.Listen("tcp", grpcAddress)
 	if err != nil {
 		log.Fatalf("Failed to listen to grpc address %v: %v", grpcAddress, err)
@@ -44,7 +56,6 @@ func main() {
 			log.Fatalf("Terminating node %v due to error: %v\n", portNumber, err.Error())
 		}
 	}()
-
 
 	// Serve gRPC
 	go func() {

@@ -9,6 +9,7 @@ import (
 	"log"
 	"time"
 
+	config "github.com/chuamingkai/50.041DynamoProject/config"
 	"github.com/chuamingkai/50.041DynamoProject/internal/models"
 	consistenthash "github.com/chuamingkai/50.041DynamoProject/pkg/consistenthashing"
 	pb "github.com/chuamingkai/50.041DynamoProject/pkg/internalcomm"
@@ -19,27 +20,26 @@ import (
 )
 
 type GetRepMessage struct {
-	peerId uint64
+	peerId    uint64
 	repObject models.Object
-	err error
+	err       error
 }
 
 type GetRepResult struct {
-	Replicas []models.Object `json:"replicas"`
-	HasVersionConflict bool `json:"hasVersionConflict"`
+	Replicas           []models.Object `json:"replicas"`
+	HasVersionConflict bool            `json:"hasVersionConflict"`
 }
 
 type PutRepMessage struct {
-	peerId uint64
+	peerId     uint64
 	putSuccess bool
-	err error
+	err        error
 }
 
 type PutRepResult struct {
-	Success bool `json:"success"`
-	Err error `json:"error"`
+	Success bool  `json:"success"`
+	Err     error `json:"error"`
 }
-
 
 func (s *nodesServer) serverGetReplicas(bucketName, key string) (*GetRepResult, error) {
 	// Get preference list for the key
@@ -51,11 +51,11 @@ func (s *nodesServer) serverGetReplicas(bucketName, key string) (*GetRepResult, 
 	defer cancel()
 
 	// Send GetRep request to all servers in preference list
-	notifyChan := make(chan GetRepMessage, consistenthash.REPLICATION_FACTOR)
+	notifyChan := make(chan GetRepMessage, config.REPLICATION_FACTOR)
 	for _, virtualNode := range prefList {
 		getRepReq := pb.GetRepRequest{
 			BucketName: bucketName,
-			Key: key,
+			Key:        key,
 		}
 
 		// Send GetRep request to virtual node
@@ -71,7 +71,7 @@ func (s *nodesServer) serverGetReplicas(bucketName, key string) (*GetRepResult, 
 				peerAddr := fmt.Sprintf("localhost:%v", vn.NodeId)
 				dialOptions := grpc.WithTransportCredentials(insecure.NewCredentials())
 				conn, err := grpc.Dial(peerAddr, dialOptions)
-				
+
 				if err == nil {
 					peer := pb.NewReplicationClient(conn)
 					getRepRes, err = peer.GetReplica(ctxRep, &getRepReq)
@@ -87,7 +87,7 @@ func (s *nodesServer) serverGetReplicas(bucketName, key string) (*GetRepResult, 
 			if err != nil {
 				notifyChan <- GetRepMessage{
 					peerId: vn.NodeId,
-					err: err,
+					err:    err,
 				}
 				return
 			}
@@ -98,21 +98,21 @@ func (s *nodesServer) serverGetReplicas(bucketName, key string) (*GetRepResult, 
 				if decodeErr != nil {
 					notifyChan <- GetRepMessage{
 						peerId: vn.NodeId,
-						err: decodeErr,
+						err:    decodeErr,
 					}
 				} else {
 					notifyChan <- GetRepMessage{
-						peerId: vn.NodeId,
+						peerId:    vn.NodeId,
 						repObject: repObject,
 					}
 				}
 			} else {
 				notifyChan <- GetRepMessage{
 					peerId: vn.NodeId,
-					err: fmt.Errorf("failed to get replica from node %v", vn.NodeId),
+					err:    fmt.Errorf("failed to get replica from node %v", vn.NodeId),
 				}
 			}
-			
+
 		}(virtualNode, notifyChan)
 	}
 
@@ -122,7 +122,7 @@ func (s *nodesServer) serverGetReplicas(bucketName, key string) (*GetRepResult, 
 	errorMsg := "ERROR: "
 	for i := 0; i < len(prefList); i++ {
 		select {
-		case notifyMsg := <- notifyChan:
+		case notifyMsg := <-notifyChan:
 			if notifyMsg.err == nil {
 				log.Printf("Received GET replica response from node %v for key {%v}: val {%v}", notifyMsg.peerId, key, notifyMsg.repObject.Value)
 				successCount++
@@ -134,9 +134,9 @@ func (s *nodesServer) serverGetReplicas(bucketName, key string) (*GetRepResult, 
 				errorMsg = errorMsg + notifyMsg.err.Error() + ";"
 				log.Printf("Received GET replica response from node %v for key {%v}: Error occurred: %v", notifyMsg.peerId, key, notifyMsg.err.Error())
 			}
-		case <- ctxRep.Done():
+		case <-ctxRep.Done():
 		}
-		if ctxRep.Err() != nil || successCount == consistenthash.REPLICATION_FACTOR {
+		if ctxRep.Err() != nil || successCount == config.REPLICATION_FACTOR {
 			break
 		}
 	}
@@ -164,12 +164,12 @@ func (s *nodesServer) serverPutReplicas(bucketName, key string, data []byte) *Pu
 	defer cancel()
 
 	// Send GetRep request to all servers in preference list
-	notifyChan := make(chan PutRepMessage, consistenthash.REPLICATION_FACTOR)	
+	notifyChan := make(chan PutRepMessage, config.REPLICATION_FACTOR)
 	putRepReq := &pb.PutRepRequest{
-		Key: key,
-		Data: data,
+		Key:        key,
+		Data:       data,
 		BucketName: bucketName,
-		SenderId: s.nodeId,
+		SenderId:   s.nodeId,
 	}
 	for _, virtualNode := range prefList {
 		var putRepRes *pb.PutRepResponse
@@ -182,7 +182,7 @@ func (s *nodesServer) serverPutReplicas(bucketName, key string, data []byte) *Pu
 				peerAddr := fmt.Sprintf("localhost:%v", vn.NodeId)
 				dialOptions := grpc.WithTransportCredentials(insecure.NewCredentials())
 				conn, err := grpc.Dial(peerAddr, dialOptions)
-				
+
 				if err == nil {
 					peer := pb.NewReplicationClient(conn)
 					putRepRes, err = peer.PutReplica(ctxRep, putRepReq)
@@ -197,15 +197,15 @@ func (s *nodesServer) serverPutReplicas(bucketName, key string, data []byte) *Pu
 
 			if err != nil {
 				notifyChan <- PutRepMessage{
-					peerId: vn.NodeId,
+					peerId:     vn.NodeId,
 					putSuccess: false,
-					err: err,
+					err:        err,
 				}
 			} else {
 				notifyChan <- PutRepMessage{
-					peerId: vn.NodeId,
+					peerId:     vn.NodeId,
 					putSuccess: putRepRes.IsDone,
-					err: nil,
+					err:        nil,
 				}
 			}
 		}(virtualNode, notifyChan)
@@ -215,7 +215,7 @@ func (s *nodesServer) serverPutReplicas(bucketName, key string, data []byte) *Pu
 	errorMsg := "ERROR MESSAGE: "
 	for i := 0; i < len(prefList); i++ {
 		select {
-		case notifyMsg := <- notifyChan:
+		case notifyMsg := <-notifyChan:
 			if notifyMsg.err == nil {
 				log.Printf("Received PUT replica response from server %v for key {%v} val {%s}: SUCCESS", notifyMsg.peerId, key, data)
 				successCount++
@@ -223,9 +223,9 @@ func (s *nodesServer) serverPutReplicas(bucketName, key string, data []byte) *Pu
 				errorMsg = errorMsg + notifyMsg.err.Error() + ";"
 				log.Printf("Received PUT replica response from server %v for key {%v} val {%s}: ERROR occured: %v\n", notifyMsg.peerId, key, data, notifyMsg.err.Error())
 			}
-		case <- ctxRep.Done():
+		case <-ctxRep.Done():
 		}
-		if ctxRep.Err() != nil || successCount == consistenthash.REPLICATION_FACTOR {
+		if ctxRep.Err() != nil || successCount == config.REPLICATION_FACTOR {
 			break
 		}
 	}

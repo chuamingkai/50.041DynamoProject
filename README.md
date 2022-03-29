@@ -51,9 +51,10 @@ The client first contacts the node manager to find out which node stores the key
 
 ## How to Setup
 ### To run a node
-`go run cmd/node/main.go -port [portnum]`
+`go run cmd/node/main.go -port PORTNUM [-file FILEPATH]`
 
-Sets up the node running the HTTP server at `portnum`. This includes setting up the gRPC server and bbolt database.
+Sets up the node running the HTTP server at `PORTNUM`. This includes setting up the HTTP and gRPC server and bbolt database. 
+If the node suffered an intermittent fault (or to speed up testing), use the optional `FILEPATH` flag to specify the Ring backup file that it should read from.
 
 ### To run the Node Manager
 -- TODO

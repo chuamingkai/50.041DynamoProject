@@ -9,10 +9,9 @@ import (
 	"os"
 	"strconv"
 	"strings"
-)
 
-const NUM_VIRTUAL_NODES int = 3  // TODO: probably slap this in some config file later
-const REPLICATION_FACTOR int = 3 // TODO: also slap this is some config file
+	config "github.com/chuamingkai/50.041DynamoProject/config"
+)
 
 type Ring struct {
 	Nodes   *DoublyLinkedList
@@ -93,11 +92,11 @@ func (dll DoublyLinkedList) TraverseAndPrint() string {
 // targetNode needs to check for all keys' hash that are >= newNode.Hash
 // and send those key-value pairs to newNode
 func (r *Ring) AddNode(name string, id uint64) []ReallocationNotice {
-	ls := make([]*VirtualNode, NUM_VIRTUAL_NODES)
+	ls := make([]*VirtualNode, config.NUM_VIRTUAL_NODES)
 	reAlloc := make([]ReallocationNotice, 0)
 
 	isEmptyBefore := r.Nodes.Length == 0
-	for i := 0; i < NUM_VIRTUAL_NODES; i++ {
+	for i := 0; i < config.NUM_VIRTUAL_NODES; i++ {
 		vName := fmt.Sprintf("%s_%d", name, i)
 		vNode := newVirtualNode(vName, id)
 		ls[i] = vNode
@@ -142,30 +141,33 @@ func (r *Ring) AddNode(name string, id uint64) []ReallocationNotice {
 					vNode.Prev = cmpNode
 				}
 			}
-
-			// reallocation
-			if !isEmptyBefore {
-				var target *VirtualNode
-				if vNode.Prev == nil {
-					// prev is tail
-					target = vNode.Next
-					for target.Next != nil {
-						target = target.Next
-					}
-				} else {
-					target = vNode.Prev
-				}
-				if target.NodeId == vNode.NodeId {
-					continue
-				}
-				reAlloc = append(reAlloc, ReallocationNotice{
-					targetNode: target,
-					newNode:    vNode,
-				})
-			}
 		}
 	}
 	r.NodeMap[name] = newNodeInfo(id, ls)
+
+	// reallocation
+	if !isEmptyBefore {
+		for _, vNode := range ls {
+			var target *VirtualNode
+			if vNode.Prev == nil {
+				// prev is tail
+				target = vNode.Next
+				for target.Next != nil {
+					target = target.Next
+				}
+			} else {
+				target = vNode.Prev
+			}
+			if target.NodeId == vNode.NodeId {
+				continue
+			}
+			reAlloc = append(reAlloc, ReallocationNotice{
+				targetNode: target,
+				newNode:    vNode,
+			})
+		}
+	}
+
 	return reAlloc
 }
 
@@ -195,8 +197,8 @@ func (r *Ring) GetPreferenceList(key string) []VirtualNode {
 	prefList := make([]VirtualNode, 0)
 	node := r.SearchKey(key)
 	prefList = append(prefList, node)
-	num_replicate_possible := REPLICATION_FACTOR
-	if len(r.NodeMap) < REPLICATION_FACTOR {
+	num_replicate_possible := config.REPLICATION_FACTOR
+	if len(r.NodeMap) < config.REPLICATION_FACTOR {
 		num_replicate_possible = len(r.NodeMap)
 	}
 	for i := 0; i < num_replicate_possible-1; i++ {

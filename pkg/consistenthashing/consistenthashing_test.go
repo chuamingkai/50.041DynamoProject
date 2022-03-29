@@ -5,6 +5,8 @@ import (
 	"math/big"
 	"sort"
 	"testing"
+
+	config "github.com/chuamingkai/50.041DynamoProject/config"
 )
 
 type debugNode struct {
@@ -51,7 +53,7 @@ func TestSingleAdd(t *testing.T) {
 	}
 
 	dRing := debugRing{}
-	for i := 0; i < NUM_VIRTUAL_NODES; i++ {
+	for i := 0; i < config.NUM_VIRTUAL_NODES; i++ {
 		nodeName := fmt.Sprintf("%s_%d", name, i)
 		dRing = append(dRing, debugNode{
 			id:   nodeName,
@@ -63,7 +65,7 @@ func TestSingleAdd(t *testing.T) {
 		return dRing[i].hash.Cmp(dRing[j].hash) == -1
 	})
 
-	if a.Nodes.Length != NUM_VIRTUAL_NODES {
+	if a.Nodes.Length != config.NUM_VIRTUAL_NODES {
 		t.Error("Number of nodes not matching")
 	}
 
@@ -90,7 +92,7 @@ func TestMultipleAdd(t *testing.T) {
 
 	for i, name := range names {
 		a.AddNode(name, ip[i])
-		for j := 0; j < NUM_VIRTUAL_NODES; j++ {
+		for j := 0; j < config.NUM_VIRTUAL_NODES; j++ {
 			nodeName := fmt.Sprintf("%s_%d", name, j)
 			dRing = append(dRing, debugNode{
 				id:   nodeName,
@@ -106,7 +108,7 @@ func TestMultipleAdd(t *testing.T) {
 		return dRing[i].hash.Cmp(dRing[j].hash) == -1
 	})
 
-	if a.Nodes.Length != len(names)*NUM_VIRTUAL_NODES {
+	if a.Nodes.Length != len(names)*config.NUM_VIRTUAL_NODES {
 		t.Error("Number of nodes not matching")
 	}
 
@@ -134,7 +136,7 @@ func TestSingleAddAndDelete(t *testing.T) {
 	}
 
 	dRing := debugRing{}
-	for i := 0; i < NUM_VIRTUAL_NODES; i++ {
+	for i := 0; i < config.NUM_VIRTUAL_NODES; i++ {
 		nodeName := fmt.Sprintf("%s_%d", name, i)
 		dRing = append(dRing, debugNode{
 			id:   nodeName,
@@ -146,7 +148,7 @@ func TestSingleAddAndDelete(t *testing.T) {
 		return dRing[i].hash.Cmp(dRing[j].hash) == -1
 	})
 
-	if a.Nodes.Length != NUM_VIRTUAL_NODES {
+	if a.Nodes.Length != config.NUM_VIRTUAL_NODES {
 		t.Error("Number of nodes not matching")
 	}
 
@@ -184,7 +186,7 @@ func TestMultipleAddAndDelete(t *testing.T) {
 
 	for i, name := range names {
 		a.AddNode(name, ip[i])
-		for j := 0; j < NUM_VIRTUAL_NODES; j++ {
+		for j := 0; j < config.NUM_VIRTUAL_NODES; j++ {
 			nodeName := fmt.Sprintf("%s_%d", name, j)
 			dRing = append(dRing, debugNode{
 				id:   nodeName,
@@ -200,7 +202,7 @@ func TestMultipleAddAndDelete(t *testing.T) {
 		return dRing[i].hash.Cmp(dRing[j].hash) == -1
 	})
 
-	if a.Nodes.Length != len(names)*NUM_VIRTUAL_NODES {
+	if a.Nodes.Length != len(names)*config.NUM_VIRTUAL_NODES {
 		t.Error("Number of nodes not matching")
 	}
 
@@ -220,7 +222,7 @@ func TestMultipleAddAndDelete(t *testing.T) {
 
 	a.RemoveNode(names[0])
 	dRing = debugRing{}
-	for j := 0; j < NUM_VIRTUAL_NODES; j++ {
+	for j := 0; j < config.NUM_VIRTUAL_NODES; j++ {
 		nodeName := fmt.Sprintf("%s_%d", names[1], j)
 		dRing = append(dRing, debugNode{
 			id:   nodeName,
@@ -234,7 +236,7 @@ func TestMultipleAddAndDelete(t *testing.T) {
 	if !testRingIntegrity(a) {
 		t.Error("Failed ring integrity check after remove only node")
 	}
-	if a.Nodes.Length != NUM_VIRTUAL_NODES {
+	if a.Nodes.Length != config.NUM_VIRTUAL_NODES {
 		t.Error("Deleting only node does not correctly reduce length")
 	}
 	if _, ok := a.NodeMap[names[0]]; ok {
@@ -275,7 +277,7 @@ func TestFindingKeys(t *testing.T) {
 
 	for i, name := range names {
 		a.AddNode(name, ip[i])
-		for j := 0; j < NUM_VIRTUAL_NODES; j++ {
+		for j := 0; j < config.NUM_VIRTUAL_NODES; j++ {
 			nodeName := fmt.Sprintf("%s_%d", name, j)
 			dRing = append(dRing, debugNode{
 				id:   nodeName,
@@ -293,11 +295,11 @@ func TestFindingKeys(t *testing.T) {
 
 	for _, key := range keys {
 		hashedKey := Hash(key)
-		j := sort.Search(len(names)*NUM_VIRTUAL_NODES, func(i int) bool {
+		j := sort.Search(len(names)*config.NUM_VIRTUAL_NODES, func(i int) bool {
 			return dRing[i].hash.Cmp(hashedKey) != -1
 		})
-		if j == len(names)*NUM_VIRTUAL_NODES || j == 0 {
-			j = len(names)*NUM_VIRTUAL_NODES - 1
+		if j == len(names)*config.NUM_VIRTUAL_NODES || j == 0 {
+			j = len(names)*config.NUM_VIRTUAL_NODES - 1
 		} else if j > 0 {
 			j--
 		}
