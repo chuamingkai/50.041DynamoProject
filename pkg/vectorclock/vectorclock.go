@@ -16,3 +16,32 @@ func UpdateRecv(index string, orig map[string]uint64) map[string]uint64 {
 	}
 	return updated.GetMap()
 }
+
+// Check if clock 2 is an ancestor of clock 1
+func IsAncestorOf(clock1Map, clock2Map map[string]uint64) bool {
+	clock1 := vclock.New().CopyFromMap(clock1Map)
+	clock2 := vclock.New().CopyFromMap(clock2Map)
+
+	return clock1.Compare(clock2, vclock.Ancestor)
+}
+
+func IsDescendantOf(clock1Map, clock2Map map[string]uint64) bool {
+	clock1 := vclock.New().CopyFromMap(clock1Map)
+	clock2 := vclock.New().CopyFromMap(clock2Map)
+
+	return clock1.Compare(clock2, vclock.Descendant)
+}
+
+func IsEqualTo(clock1Map, clock2Map map[string]uint64) bool {
+	clock1 := vclock.New().CopyFromMap(clock1Map)
+	clock2 := vclock.New().CopyFromMap(clock2Map)
+
+	return clock1.Compare(clock2, vclock.Equal)
+}
+
+func IsConcurrentWith(clock1Map, clock2Map map[string]uint64) bool {
+	clock1 := vclock.New().CopyFromMap(clock1Map)
+	clock2 := vclock.New().CopyFromMap(clock2Map)
+
+	return clock1.Compare(clock2, vclock.Concurrent)
+}

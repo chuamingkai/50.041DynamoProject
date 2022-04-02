@@ -13,6 +13,7 @@ import (
 	"github.com/chuamingkai/50.041DynamoProject/internal/models"
 	consistenthash "github.com/chuamingkai/50.041DynamoProject/pkg/consistenthashing"
 	pb "github.com/chuamingkai/50.041DynamoProject/pkg/internalcomm"
+	"github.com/chuamingkai/50.041DynamoProject/pkg/vectorclock"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -26,8 +27,9 @@ type GetRepMessage struct {
 }
 
 type GetRepResult struct {
-	Replicas           []models.Object `json:"replicas"`
-	HasVersionConflict bool            `json:"hasVersionConflict"`
+	Replicas           []models.Object 	`json:"replicas"`
+	HasVersionConflict 	bool            `json:"hasVersionConflict"`
+	WriteCoordinator	int				`json:"writeCoordinator"`
 }
 
 type PutRepMessage struct {
@@ -51,7 +53,7 @@ func (s *nodesServer) serverGetReplicas(bucketName, key string) (*GetRepResult, 
 	defer cancel()
 
 	// Send GetRep request to all servers in preference list
-	notifyChan := make(chan GetRepMessage, config.REPLICATION_FACTOR)
+	notifyChan := make(chan GetRepMessage, len(prefList))
 	for _, virtualNode := range prefList {
 		getRepReq := pb.GetRepRequest{
 			BucketName: bucketName,
@@ -67,10 +69,10 @@ func (s *nodesServer) serverGetReplicas(bucketName, key string) (*GetRepResult, 
 			if vn.NodeId == uint64(s.nodeId) {
 				getRepRes, err = s.GetReplica(ctxRep, &getRepReq)
 			} else {
-				// var peer pb.ReplicationClient
 				peerAddr := fmt.Sprintf("localhost:%v", vn.NodeId)
 				dialOptions := grpc.WithTransportCredentials(insecure.NewCredentials())
-				conn, err := grpc.Dial(peerAddr, dialOptions)
+				var conn *grpc.ClientConn
+				conn, err = grpc.Dial(peerAddr, dialOptions)
 
 				if err == nil {
 					peer := pb.NewReplicationClient(conn)
@@ -117,6 +119,7 @@ func (s *nodesServer) serverGetReplicas(bucketName, key string) (*GetRepResult, 
 	}
 
 	var replicas []models.Object
+	writeCoordinator := -1
 
 	successCount := 0
 	errorMsg := "ERROR: "
@@ -127,6 +130,12 @@ func (s *nodesServer) serverGetReplicas(bucketName, key string) (*GetRepResult, 
 				log.Printf("Received GET replica response from node %v for key {%v}: val {%v}", notifyMsg.peerId, key, notifyMsg.repObject.Value)
 				successCount++
 				replicas = append(replicas, notifyMsg.repObject)
+
+				// Add write coordinator -> must not be current node!
+				if writeCoordinator < 0 && notifyMsg.peerId != uint64(s.internalAddr) {
+					writeCoordinator = int(notifyMsg.peerId)
+					log.Printf("Write coordinator: %v\n", writeCoordinator)
+				}
 			} else if e, ok := status.FromError(notifyMsg.err); ok && e.Code() == codes.NotFound {
 				log.Printf("Received GET replica response from node %v for key {%v}: key not found", notifyMsg.peerId, key)
 				successCount++
@@ -136,21 +145,22 @@ func (s *nodesServer) serverGetReplicas(bucketName, key string) (*GetRepResult, 
 			}
 		case <-ctxRep.Done():
 		}
-		if ctxRep.Err() != nil || successCount == config.REPLICATION_FACTOR {
+		if ctxRep.Err() != nil || successCount == config.MIN_READS {
 			break
 		}
 	}
 
 	log.Printf("Finished getting replicas for key %v, received %v successful response(s).\n", key, successCount)
 
-	if successCount == 0 { // No responses received -> servers in preference list are down
+	// TODO: Figure out how to handle the case when not enough replicas are received
+	if successCount < config.MIN_READS { // Not enough replicas received -> unsuccessful read operation
 		return nil, errors.New(errorMsg)
 	} else if len(replicas) == 0 { // No replicas received -> key does not exist in database
-		return &GetRepResult{Replicas: replicas, HasVersionConflict: false}, errors.New("key does not exist")
+		return &GetRepResult{Replicas: replicas, HasVersionConflict: false, WriteCoordinator: writeCoordinator}, errors.New("key does not exist")
 	} else if allSame(replicas) { // No version conflicts among replicas
-		return &GetRepResult{Replicas: replicas, HasVersionConflict: false}, nil
+		return &GetRepResult{Replicas: replicas, HasVersionConflict: false, WriteCoordinator: writeCoordinator}, nil
 	} else { // Versioning conflicts found
-		return &GetRepResult{Replicas: replicas, HasVersionConflict: true}, nil
+		return &GetRepResult{Replicas: replicas, HasVersionConflict: true, WriteCoordinator: writeCoordinator}, nil
 	}
 }
 
@@ -158,8 +168,8 @@ func (s *nodesServer) serverPutReplicas(bucketName, key string, data []byte) *Pu
 	// Get preference list for the key
 	prefList := s.ring.GetPreferenceList(key)
 
-	// Create context to get replicas
-	serverDeadline := time.Now().Add(10 * time.Second)
+	// Create context to put replicas
+	serverDeadline := time.Now().Add(5 * time.Second)
 	ctxRep, cancel := context.WithDeadline(context.Background(), serverDeadline)
 	defer cancel()
 
@@ -195,7 +205,7 @@ func (s *nodesServer) serverPutReplicas(bucketName, key string, data []byte) *Pu
 				defer conn.Close()
 			}
 
-			if err != nil {
+			if err != nil || putRepRes == nil {
 				notifyChan <- PutRepMessage{
 					peerId:     vn.NodeId,
 					putSuccess: false,
@@ -240,9 +250,13 @@ func (s *nodesServer) serverPutReplicas(bucketName, key string, data []byte) *Pu
 }
 
 func allSame(replicas []models.Object) bool {
+	clock1 := replicas[0].VC
+
 	for i := 1; i < len(replicas); i++ {
-		// TODO: Figure out how to check for versioning conflicts
-		if replicas[0].Value != replicas[i].Value {
+		clock2 := replicas[i].VC
+		if vectorclock.IsAncestorOf(clock1, clock2) || vectorclock.IsEqualTo(clock1, clock2) {
+			continue
+		} else {
 			return false
 		}
 	}

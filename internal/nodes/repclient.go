@@ -17,8 +17,6 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// TODO: Add relevant logging messages
-
 func (s *nodesServer) doGetReplica(bucketName, key string) ([]byte, bool, error) {
 	// Check if bucket exists
 	if !s.boltDB.BucketExists(bucketName) {
@@ -88,7 +86,7 @@ func (s *nodesServer) GetReplica(ctx context.Context, req *pb.GetRepRequest) (*p
 
 	// TODO: Figure out what to do when the replica's key is not found
 	replica, found, err := s.doGetReplica(req.BucketName, req.Key)
-	log.Printf("Replica for key '%v' found\n", req.Key)
+	// log.Printf("Replica for key '%v' found\n", req.Key)
 	if err != nil {
 		return nil, err
 	} else if !found {
@@ -116,8 +114,3 @@ func (s *nodesServer) PutReplica(ctx context.Context, req *pb.PutRepRequest) (*p
 	log.Printf("Successfully PUT replica for key '%s', val: %s\n", req.Key, req.Data)
 	return &pb.PutRepResponse{IsDone: true}, nil
 }
-
-// TODO: Implement comparison of vector clocks
-// func compareVectorClocks(currentVC, incomingVC map[string]uint64) bool {
-// 	return true
-// }

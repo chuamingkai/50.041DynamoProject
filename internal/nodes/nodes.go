@@ -2,6 +2,7 @@ package nodes
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -17,15 +18,15 @@ import (
 	"github.com/gorilla/mux"
 )
 
-// TODO: Name this smth else
 type nodesServer struct {
 	pb.UnimplementedReplicationServer
 	boltDB *bolt.DB
 	ring   *consistenthash.Ring
 	nodeId int64
+	internalAddr int64
 }
-type UpdateNode struct {
-	NodeName string `json:"nodename"`
+type UpdateNodeRequestBody struct {
+	NodeName uint64 `json:"nodename"`
 }
 
 type PutRequestBody struct {
@@ -36,6 +37,12 @@ type PutRequestBody struct {
 type GetRequestBody struct {
 	BucketName string `json:"bucketName"`
 	Key        string `json:"key"`
+}
+
+type GetResponseBody struct {
+	Context models.GetContext `json:"context"`
+	Value string `json:"value,omitempty"`
+	Conflicts []models.Object `json:"conflicts,omitempty"`
 }
 
 func (s *nodesServer) doPut(w http.ResponseWriter, r *http.Request) {
@@ -56,8 +63,6 @@ func (s *nodesServer) doPut(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("Received PUT request from clients for key %s, value %v\n", reqBody.Object.Key, reqBody.Object.Value)
-
-	/* TODO: To add ignore if new updated vector clock is outdated?*/
 
 	dataBytes, err := json.Marshal(reqBody.Object)
 	if err != nil {
@@ -98,9 +103,30 @@ func (s *nodesServer) doGet(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Error getting replicas: %s\n", err.Error())
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	} 
+	
+	var getResponseBody GetResponseBody
+	var context models.GetContext
+
+	if getRepResult.HasVersionConflict {
+		getResponseBody.Conflicts = getRepResult.Replicas
+		context = models.GetContext{
+			HasConflicts: getRepResult.HasVersionConflict,
+			WriteCoordinator: getRepResult.WriteCoordinator,
+		}
 	} else {
-		json.NewEncoder(w).Encode(getRepResult)
+		obj := getRepResult.Replicas[0]
+
+		getResponseBody.Value = obj.Value
+		context = models.GetContext{
+			HasConflicts: getRepResult.HasVersionConflict,
+			WriteCoordinator: getRepResult.WriteCoordinator,
+			VectorClock: obj.VC,
+		}
 	}
+
+	getResponseBody.Context = context
+	json.NewEncoder(w).Encode(getResponseBody)
 
 }
 
@@ -123,53 +149,59 @@ func (s *nodesServer) doCreateBucket(w http.ResponseWriter, r *http.Request) {
 func (s *nodesServer) updateAddNode(w http.ResponseWriter, r *http.Request) {
 	reqBody, _ := ioutil.ReadAll(r.Body)
 
-	var newnode UpdateNode
+	var newnode UpdateNodeRequestBody
 	json.Unmarshal(reqBody, &newnode)
 	exist := false
-	number, err := strconv.ParseUint(newnode.NodeName, 10, 64)
-	if err == nil {
-		for _, n := range s.ring.NodeMap {
-			if n.NodeId == number {
-				exist = true
-			}
+	nodenameString := strconv.FormatUint(newnode.NodeName, 10)
+
+	// Change node id to gRPC address of node
+	// newnode.NodeName -= 3000
+	grpcAddress := newnode.NodeName - 3000
+
+	for _, n := range s.ring.NodeMap {
+		if n.NodeId == uint64(newnode.NodeName) {
+			exist = true
 		}
-		if !exist {
-			s.ring.AddNode(newnode.NodeName, number)
-			log.Printf("Node %s added to ring.\n", newnode.NodeName)
-			// fmt.Println(s.ring.Nodes.TraverseAndPrint())
-			json.NewEncoder(w).Encode(s.ring.Nodes.TraverseAndPrint())
-		} else {
-			http.Error(w, "Node already exists!", http.StatusBadRequest)
-		}
+		break
+	}
+
+	if !exist {
+		s.ring.AddNode(nodenameString, grpcAddress)
+		log.Printf("Node %v added to ring.\n", newnode.NodeName)
+		// fmt.Println(s.ring.Nodes.TraverseAndPrint())
+		json.NewEncoder(w).Encode(s.ring.Nodes.TraverseAndPrint())
 	} else {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Node already exists!", http.StatusBadRequest)
 	}
 }
 
 func (s *nodesServer) updateDelNode(w http.ResponseWriter, r *http.Request) {
 	reqBody, _ := ioutil.ReadAll(r.Body)
 
-	var newnode UpdateNode
+	var newnode UpdateNodeRequestBody
 	json.Unmarshal(reqBody, &newnode)
 	exist := false
-	number, err := strconv.ParseUint(newnode.NodeName, 10, 64)
-	if err == nil {
-		for _, n := range s.ring.NodeMap {
-			if n.NodeId == number {
-				exist = true
-			}
-		}
-		if exist {
-			s.ring.RemoveNode(newnode.NodeName)
-			fmt.Println(s.ring.Nodes.TraverseAndPrint())
-		} else {
-			http.Error(w, "Node doesn't exists!", http.StatusServiceUnavailable)
+	nodenameString := strconv.FormatUint(newnode.NodeName, 10)
+
+	for _, n := range s.ring.NodeMap {
+		if n.NodeId == newnode.NodeName {
+			exist = true
 		}
 	}
-	json.NewEncoder(w).Encode(newnode)
+	if exist {
+		s.ring.RemoveNode(nodenameString)
+		fmt.Println(s.ring.Nodes.TraverseAndPrint())
+		json.NewEncoder(w).Encode(newnode)
+	} else {
+		http.Error(w, "Node doesn't exists!", http.StatusServiceUnavailable)
+	}
 }
 
-func (s *nodesServer) CreateServer() *http.Server {
+func (s *nodesServer) RunNodeServer() (*http.Server, error) {
+	if s.ring == nil {
+		return nil, errors.New("nil ring pointer")
+	}
+
 	log.Println("Setting up node at port", s.nodeId)
 
 	/*creates a new instance of a mux router*/
@@ -194,18 +226,18 @@ func (s *nodesServer) CreateServer() *http.Server {
 	}
 
 	go s.ringBackupService()
-	return &server
+	return &server, nil
 }
 
 func (s *nodesServer) ringBackupService() {
 	backupTicker := time.NewTicker(1 * time.Minute) // randomly chosen time
 	for {
 		<-backupTicker.C
-		s.ring.BackupRing(fmt.Sprintf("store/node%dring.bak", s.nodeId))
+		s.ring.BackupRing(fmt.Sprintf("store/ringbackups/node%dring.bak", s.nodeId))
 	}
 }
 
-func NewNodeServer(port int64, newRing *consistenthash.Ring) *nodesServer {
+func NewNodeServer(port, internalAddr int64, newRing *consistenthash.Ring) *nodesServer {
 	// Open database
 	db, err := bolt.ConnectDB(int(port))
 	if err != nil {
@@ -213,6 +245,7 @@ func NewNodeServer(port int64, newRing *consistenthash.Ring) *nodesServer {
 	}
 	return &nodesServer{
 		nodeId: port,
+		internalAddr: internalAddr,
 		ring:   newRing,
 		boltDB: db,
 	}

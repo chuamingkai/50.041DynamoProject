@@ -4,7 +4,6 @@ import (
 	"time"
 )
 
-// TODO: Add vector clock functions
 type Object struct {
 	Key string `json:"key"`
 	Value string `json:"value"`
