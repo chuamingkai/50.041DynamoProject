@@ -20,6 +20,8 @@ const _ = grpc.SupportPackageIsVersion7
 type ReplicationClient interface {
 	PutReplica(ctx context.Context, in *PutRepRequest, opts ...grpc.CallOption) (*PutRepResponse, error)
 	GetReplica(ctx context.Context, in *GetRepRequest, opts ...grpc.CallOption) (*GetRepResponse, error)
+	PutMultiple(ctx context.Context, opts ...grpc.CallOption) (Replication_PutMultipleClient, error)
+	Heartbeat(ctx context.Context, in *HeartbeatRequest, opts ...grpc.CallOption) (*HeartbeatResponse, error)
 }
 
 type replicationClient struct {
@@ -48,12 +50,57 @@ func (c *replicationClient) GetReplica(ctx context.Context, in *GetRepRequest, o
 	return out, nil
 }
 
+func (c *replicationClient) PutMultiple(ctx context.Context, opts ...grpc.CallOption) (Replication_PutMultipleClient, error) {
+	stream, err := c.cc.NewStream(ctx, &Replication_ServiceDesc.Streams[0], "/Replication/PutMultiple", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &replicationPutMultipleClient{stream}
+	return x, nil
+}
+
+type Replication_PutMultipleClient interface {
+	Send(*MultiPutRequest) error
+	CloseAndRecv() (*PutRepResponse, error)
+	grpc.ClientStream
+}
+
+type replicationPutMultipleClient struct {
+	grpc.ClientStream
+}
+
+func (x *replicationPutMultipleClient) Send(m *MultiPutRequest) error {
+	return x.ClientStream.SendMsg(m)
+}
+
+func (x *replicationPutMultipleClient) CloseAndRecv() (*PutRepResponse, error) {
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	m := new(PutRepResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func (c *replicationClient) Heartbeat(ctx context.Context, in *HeartbeatRequest, opts ...grpc.CallOption) (*HeartbeatResponse, error) {
+	out := new(HeartbeatResponse)
+	err := c.cc.Invoke(ctx, "/Replication/Heartbeat", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ReplicationServer is the server API for Replication service.
 // All implementations must embed UnimplementedReplicationServer
 // for forward compatibility
 type ReplicationServer interface {
 	PutReplica(context.Context, *PutRepRequest) (*PutRepResponse, error)
 	GetReplica(context.Context, *GetRepRequest) (*GetRepResponse, error)
+	PutMultiple(Replication_PutMultipleServer) error
+	Heartbeat(context.Context, *HeartbeatRequest) (*HeartbeatResponse, error)
 	mustEmbedUnimplementedReplicationServer()
 }
 
@@ -66,6 +113,12 @@ func (UnimplementedReplicationServer) PutReplica(context.Context, *PutRepRequest
 }
 func (UnimplementedReplicationServer) GetReplica(context.Context, *GetRepRequest) (*GetRepResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetReplica not implemented")
+}
+func (UnimplementedReplicationServer) PutMultiple(Replication_PutMultipleServer) error {
+	return status.Errorf(codes.Unimplemented, "method PutMultiple not implemented")
+}
+func (UnimplementedReplicationServer) Heartbeat(context.Context, *HeartbeatRequest) (*HeartbeatResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Heartbeat not implemented")
 }
 func (UnimplementedReplicationServer) mustEmbedUnimplementedReplicationServer() {}
 
@@ -116,6 +169,50 @@ func _Replication_GetReplica_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Replication_PutMultiple_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(ReplicationServer).PutMultiple(&replicationPutMultipleServer{stream})
+}
+
+type Replication_PutMultipleServer interface {
+	SendAndClose(*PutRepResponse) error
+	Recv() (*MultiPutRequest, error)
+	grpc.ServerStream
+}
+
+type replicationPutMultipleServer struct {
+	grpc.ServerStream
+}
+
+func (x *replicationPutMultipleServer) SendAndClose(m *PutRepResponse) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func (x *replicationPutMultipleServer) Recv() (*MultiPutRequest, error) {
+	m := new(MultiPutRequest)
+	if err := x.ServerStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func _Replication_Heartbeat_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HeartbeatRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ReplicationServer).Heartbeat(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/Replication/Heartbeat",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ReplicationServer).Heartbeat(ctx, req.(*HeartbeatRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Replication_ServiceDesc is the grpc.ServiceDesc for Replication service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -131,7 +228,17 @@ var Replication_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "GetReplica",
 			Handler:    _Replication_GetReplica_Handler,
 		},
+		{
+			MethodName: "Heartbeat",
+			Handler:    _Replication_Heartbeat_Handler,
+		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "PutMultiple",
+			Handler:       _Replication_PutMultiple_Handler,
+			ClientStreams: true,
+		},
+	},
 	Metadata: "pkg/internalcomm/internalcomm.proto",
 }

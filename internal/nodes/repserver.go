@@ -239,37 +239,38 @@ func (s *nodesServer) serverPutReplicas(bucketName, key string, data []byte) *Pu
 	}
 }
 
-func (s *nodesServer) serverPutHint(bucketName string, destinationNodename string, obj models.HintedObject, rawdata []byte) *PutRepResult {
+func (s *nodesServer) clientPutMultiple(target uint64, datas []models.HintedObject) bool {
 	serverDeadline := time.Now().Add(10 * time.Second)
 	ctxRep, cancel := context.WithDeadline(context.Background(), serverDeadline)
 	defer cancel()
 
-	putRepReq := &pb.PutRepRequest{
-		Key:        obj.Data.Key,
-		Data:       rawdata,
-		BucketName: bucketName,
-		SenderId:   s.nodeId,
-	}
-	destNodeId := s.ring.NodeMap[destinationNodename].NodeId
-	var putRepRes *pb.PutRepResponse
-
-	peerAddr := fmt.Sprintf("localhost:%v", destNodeId-3000)
+	peerAddr := fmt.Sprintf("localhost:%v", target)
 	dialOptions := grpc.WithTransportCredentials(insecure.NewCredentials())
 	conn, err := grpc.Dial(peerAddr, dialOptions)
-
-	if err == nil {
-		peer := pb.NewReplicationClient(conn)
-		putRepRes, err = peer.PutReplica(ctxRep, putRepReq)
-		if err != nil {
-			log.Printf("Error putting replica in node %v: %v\n", destNodeId, err.Error())
-			return &PutRepResult{Success: false, Err: err}
-		}
-	} else {
-		log.Printf("Error contacting node %v: %v\n", destNodeId, err)
-		return &PutRepResult{Success: false, Err: err}
+	if err != nil {
+		log.Printf("Error contacting node %v: %v\n", target+3000, err)
 	}
 	defer conn.Close()
-	return &PutRepResult{Success: putRepRes.IsDone, Err: err}
+	client := pb.NewReplicationClient(conn)
+	stream, err := client.PutMultiple(ctxRep)
+	if err != nil {
+		log.Println("Error beginning client streaming: ", err)
+	}
+	for _, d := range datas {
+		bytes_data, err := json.Marshal(d.Data)
+		if err != nil {
+			log.Println("Error marshalling data")
+		}
+		err = stream.Send(&pb.MultiPutRequest{Key: d.Data.Key, Data: bytes_data, BucketName: d.BucketName, SenderId: s.nodeId})
+		if err != nil {
+			log.Println("Error sending data to stream: ", err)
+		}
+	}
+	reply, err := stream.CloseAndRecv()
+	if err != nil {
+		log.Println("Error encountered on CloseAndRecv: ", err)
+	}
+	return reply.IsDone
 }
 
 func allSame(replicas []models.Object) bool {

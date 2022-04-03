@@ -238,7 +238,6 @@ func (s *nodesServer) hintHandlerService() {
 	for {
 		<-ticker.C
 		delete := make([]string, 0)
-		update := make(map[string][]models.HintedObject)
 		err := s.boltDB.Iterate(config.HINT_BUCKETNAME, func(k, v []byte) error {
 			destinationNodename := string(k[:])
 			// TODO: ping nodename
@@ -247,24 +246,8 @@ func (s *nodesServer) hintHandlerService() {
 			if err := json.Unmarshal(v, &hintedDatas); err != nil {
 				return err
 			}
-			num_success := 0
-			failed_hints := make([]models.HintedObject, 0)
-			for _, d := range hintedDatas {
-				bytes_data, err := json.Marshal(d.Data)
-				if err != nil {
-					return err
-				}
-				r := s.serverPutHint(d.BucketName, destinationNodename, d, bytes_data)
-				if r.Success {
-					num_success++
-				} else {
-					failed_hints = append(failed_hints, d)
-				}
-			}
-			if num_success == len(hintedDatas) {
+			if s.clientPutMultiple(s.ring.NodeMap[destinationNodename].NodeId-3000, hintedDatas) {
 				delete = append(delete, destinationNodename)
-			} else {
-				update[destinationNodename] = failed_hints
 			}
 			return nil
 		})
@@ -276,19 +259,6 @@ func (s *nodesServer) hintHandlerService() {
 		for _, v := range delete {
 			err = s.boltDB.DeleteKey(config.HINT_BUCKETNAME, v)
 			log.Printf("HintHandlerService: Hint successfully handed off to node %s\n", v)
-			if err != nil {
-				log.Printf("HintHandlerService error: %s\n", err)
-			}
-		}
-
-		for k, v := range update {
-			b, err := json.Marshal(v)
-			log.Printf("HintHandlerService: Hint returned to bucket %s\n", k)
-			if err != nil {
-				log.Printf("HintHandlerService error: %s\n", err)
-				continue
-			}
-			err = s.boltDB.Put(config.HINT_BUCKETNAME, k, b)
 			if err != nil {
 				log.Printf("HintHandlerService error: %s\n", err)
 			}

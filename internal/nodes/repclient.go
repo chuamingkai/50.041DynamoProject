@@ -6,6 +6,7 @@ import (
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"strconv"
 	"time"
@@ -39,7 +40,7 @@ func (s *nodesServer) doPutReplica(bucketName, key string, data []byte, senderId
 		if err := s.boltDB.CreateBucket(bucketName); err != nil {
 			return err
 		}
-		
+
 	}
 
 	var incomingRepObject models.Object
@@ -66,7 +67,7 @@ func (s *nodesServer) doPutReplica(bucketName, key string, data []byte, senderId
 		if err != nil {
 			return err
 		}
-		
+
 		return s.boltDB.Put(bucketName, key, incomingRepBytes)
 	} else {
 		incomingRepObject.CreatedOn = currentTime
@@ -80,7 +81,6 @@ func (s *nodesServer) doPutReplica(bucketName, key string, data []byte, senderId
 		return s.boltDB.Put(bucketName, key, incomingRepBytes)
 	}
 }
-
 
 // GetReplica issued from server responsible for the get operation
 func (s *nodesServer) GetReplica(ctx context.Context, req *pb.GetRepRequest) (*pb.GetRepResponse, error) {
@@ -115,6 +115,20 @@ func (s *nodesServer) PutReplica(ctx context.Context, req *pb.PutRepRequest) (*p
 
 	log.Printf("Successfully PUT replica for key '%s', val: %s\n", req.Key, req.Data)
 	return &pb.PutRepResponse{IsDone: true}, nil
+}
+
+func (s *nodesServer) PutMultiple(stream pb.Replication_PutMultipleServer) error {
+	for {
+		object, err := stream.Recv()
+		if err == io.EOF {
+			return stream.SendAndClose(&pb.PutRepResponse{IsDone: true})
+		}
+		log.Printf("Node received %s for %s\n", object.Key, object.BucketName)
+		err = s.doPutReplica(object.BucketName, object.Key, object.Data, object.SenderId)
+		if err != nil {
+			return err
+		}
+	}
 }
 
 // TODO: Implement comparison of vector clocks

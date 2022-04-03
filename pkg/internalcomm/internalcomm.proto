@@ -4,8 +4,10 @@ syntax = "proto3";
 option go_package = "github.com/chuamingkai/50.041DynamoProject/pkg/grpc";
 
 service Replication {
-    rpc PutReplica (PutRepRequest) returns (PutRepResponse);
+    rpc PutReplica (PutRepRequest) returns (PutRepResponse); 
     rpc GetReplica (GetRepRequest) returns (GetRepResponse);
+    rpc PutMultiple (stream MultiPutRequest) returns (PutRepResponse);
+    rpc Heartbeat (HeartbeatRequest) returns (HeartbeatResponse);
 }
 
 message PutRepRequest {
@@ -27,4 +29,20 @@ message GetRepRequest {
 message GetRepResponse {
     bytes data = 1;
     bool hasVersionConflict = 2;
+}
+
+message MultiPutRequest {
+    string key = 1;
+    bytes data = 2;
+    string bucketName = 3;
+    int64 senderId = 4;
+}
+
+
+message HeartbeatRequest {
+    bytes data = 1;
+}
+
+message HeartbeatResponse {
+    bytes data = 1;
 }
