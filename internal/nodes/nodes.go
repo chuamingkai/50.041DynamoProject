@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	config "github.com/chuamingkai/50.041DynamoProject/config"
 	"github.com/chuamingkai/50.041DynamoProject/internal/models"
 	"github.com/chuamingkai/50.041DynamoProject/pkg/bolt"
 	consistenthash "github.com/chuamingkai/50.041DynamoProject/pkg/consistenthashing"
@@ -49,6 +50,12 @@ func (s *nodesServer) doPut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if bucket name is the protected hints bucket
+	if reqBody.BucketName == config.HINT_BUCKETNAME {
+		http.Error(w, fmt.Sprintf("Read/Write to '%s' bucket not allowed", config.HINT_BUCKETNAME), http.StatusForbidden)
+		return
+	}
+
 	// Check if node handles key
 	if !s.ring.IsNodeResponsibleForKey(reqBody.Object.Key, uint64(s.nodeId)) {
 		http.Error(w, "Node is not responsible for key!", http.StatusBadRequest)
@@ -84,6 +91,12 @@ func (s *nodesServer) doGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if bucket name is the protected hints bucket
+	if reqBody.BucketName == config.HINT_BUCKETNAME {
+		http.Error(w, fmt.Sprintf("Read/Write to '%s' bucket not allowed", config.HINT_BUCKETNAME), http.StatusForbidden)
+		return
+	}
+
 	// Check if node handles key
 	if !s.ring.IsNodeResponsibleForKey(reqBody.Key, uint64(s.nodeId)) {
 		http.Error(w, "Node is not responsible for key!", http.StatusBadRequest)
@@ -111,7 +124,11 @@ func (s *nodesServer) doCreateBucket(w http.ResponseWriter, r *http.Request) {
 	if newBucketName, ok = vars["bucketName"]; !ok {
 		http.Error(w, "Missing bucket name", http.StatusBadRequest)
 	}
-
+	// protected hint bucket name
+	if newBucketName == config.HINT_BUCKETNAME {
+		http.Error(w, fmt.Sprintf("'%s' cannot be the name of a bucket", config.HINT_BUCKETNAME), http.StatusBadRequest)
+		return
+	}
 	err := s.boltDB.CreateBucket(newBucketName)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -194,14 +211,88 @@ func (s *nodesServer) CreateServer() *http.Server {
 	}
 
 	go s.ringBackupService()
+	go s.hintHandlerService()
 	return &server
 }
 
+// ringBackupService is a function that runs periodically backups the ring
+// by calling BackupRing to a file, specified by RING_BACKUP_FILEFORMAT
+// Interval to backup defined by RING_BACKUP_INTERVAL in config file
+// Filename of backup defined by RING_BACKUP_FILEFORMAT in config file
 func (s *nodesServer) ringBackupService() {
-	backupTicker := time.NewTicker(1 * time.Minute) // randomly chosen time
+	backupTicker := time.NewTicker(config.RING_BACKUP_INTERVAL)
 	for {
 		<-backupTicker.C
-		s.ring.BackupRing(fmt.Sprintf("store/node%dring.bak", s.nodeId))
+		err := s.ring.BackupRing(fmt.Sprintf(config.RING_BACKUP_FILEFORMAT, s.nodeId))
+		if err != nil {
+			log.Printf("RingBackupService error: %s\n", err)
+		}
+	}
+}
+
+// hintHandlerService periodically checks the 'hints' bucket of the database
+// and tries to pass the hinted value to the appropriate node.
+// Interval check defined by HINT_CHECK_INTERVAL in config file
+func (s *nodesServer) hintHandlerService() {
+	ticker := time.NewTicker(config.HINT_CHECK_INTERVAL)
+	for {
+		<-ticker.C
+		delete := make([]string, 0)
+		update := make(map[string][]models.HintedObject)
+		err := s.boltDB.Iterate(config.HINT_BUCKETNAME, func(k, v []byte) error {
+			destinationNodename := string(k[:])
+			// TODO: ping nodename
+			// if nodename is alive
+			var hintedDatas []models.HintedObject
+			if err := json.Unmarshal(v, &hintedDatas); err != nil {
+				return err
+			}
+			num_success := 0
+			failed_hints := make([]models.HintedObject, 0)
+			for _, d := range hintedDatas {
+				bytes_data, err := json.Marshal(d.Data)
+				if err != nil {
+					return err
+				}
+				r := s.serverPutHint(d.BucketName, destinationNodename, d, bytes_data)
+				if r.Success {
+					num_success++
+				} else {
+					failed_hints = append(failed_hints, d)
+				}
+			}
+			if num_success == len(hintedDatas) {
+				delete = append(delete, destinationNodename)
+			} else {
+				update[destinationNodename] = failed_hints
+			}
+			return nil
+		})
+
+		if err != nil {
+			log.Printf("HintHandlerService error: %s\n", err)
+		}
+
+		for _, v := range delete {
+			err = s.boltDB.DeleteKey(config.HINT_BUCKETNAME, v)
+			log.Printf("HintHandlerService: Hint successfully handed off to node %s\n", v)
+			if err != nil {
+				log.Printf("HintHandlerService error: %s\n", err)
+			}
+		}
+
+		for k, v := range update {
+			b, err := json.Marshal(v)
+			log.Printf("HintHandlerService: Hint returned to bucket %s\n", k)
+			if err != nil {
+				log.Printf("HintHandlerService error: %s\n", err)
+				continue
+			}
+			err = s.boltDB.Put(config.HINT_BUCKETNAME, k, b)
+			if err != nil {
+				log.Printf("HintHandlerService error: %s\n", err)
+			}
+		}
 	}
 }
 
@@ -210,6 +301,13 @@ func NewNodeServer(port int64, newRing *consistenthash.Ring) *nodesServer {
 	db, err := bolt.ConnectDB(int(port))
 	if err != nil {
 		log.Fatal("Error connecting to Bolt database:", err)
+	}
+
+	if !db.BucketExists(config.HINT_BUCKETNAME) {
+		err = db.CreateBucket(config.HINT_BUCKETNAME)
+		if err != nil {
+			log.Fatal("Error creating hint bucket:", err)
+		}
 	}
 	return &nodesServer{
 		nodeId: port,

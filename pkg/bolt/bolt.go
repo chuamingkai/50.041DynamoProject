@@ -60,3 +60,20 @@ func (db *DB) Get(bucketName, key string) ([]byte, error) {
 	})
 	return value, err
 }
+
+func (db *DB) Iterate(bucketname string, handle_kv func(k, v []byte) error) error {
+	err := db.DB.Update(func(tx *bolt.Tx) error {
+		// Assume bucket exists and has keys
+		b := tx.Bucket([]byte(bucketname))
+		return b.ForEach(handle_kv)
+	})
+	return err
+}
+
+func (db *DB) DeleteKey(bucketname string, key string) error {
+	err := db.DB.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucketname))
+		return b.Delete([]byte(key))
+	})
+	return err
+}

@@ -239,6 +239,39 @@ func (s *nodesServer) serverPutReplicas(bucketName, key string, data []byte) *Pu
 	}
 }
 
+func (s *nodesServer) serverPutHint(bucketName string, destinationNodename string, obj models.HintedObject, rawdata []byte) *PutRepResult {
+	serverDeadline := time.Now().Add(10 * time.Second)
+	ctxRep, cancel := context.WithDeadline(context.Background(), serverDeadline)
+	defer cancel()
+
+	putRepReq := &pb.PutRepRequest{
+		Key:        obj.Data.Key,
+		Data:       rawdata,
+		BucketName: bucketName,
+		SenderId:   s.nodeId,
+	}
+	destNodeId := s.ring.NodeMap[destinationNodename].NodeId
+	var putRepRes *pb.PutRepResponse
+
+	peerAddr := fmt.Sprintf("localhost:%v", destNodeId-3000)
+	dialOptions := grpc.WithTransportCredentials(insecure.NewCredentials())
+	conn, err := grpc.Dial(peerAddr, dialOptions)
+
+	if err == nil {
+		peer := pb.NewReplicationClient(conn)
+		putRepRes, err = peer.PutReplica(ctxRep, putRepReq)
+		if err != nil {
+			log.Printf("Error putting replica in node %v: %v\n", destNodeId, err.Error())
+			return &PutRepResult{Success: false, Err: err}
+		}
+	} else {
+		log.Printf("Error contacting node %v: %v\n", destNodeId, err)
+		return &PutRepResult{Success: false, Err: err}
+	}
+	defer conn.Close()
+	return &PutRepResult{Success: putRepRes.IsDone, Err: err}
+}
+
 func allSame(replicas []models.Object) bool {
 	for i := 1; i < len(replicas); i++ {
 		// TODO: Figure out how to check for versioning conflicts
