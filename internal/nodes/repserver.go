@@ -314,3 +314,27 @@ func allSame(replicas []models.Object) bool {
 	}
 	return true
 }
+
+func (s *nodesServer) putInHintBucket(origNode string, origBucket string, hint models.Object) error {
+	data, err := s.boltDB.Get(config.HINT_BUCKETNAME, origNode)
+	if err != nil {
+		return err
+	}
+	var hintedDatas []models.HintedObject
+	if data == nil {
+		hintedDatas = []models.HintedObject{{Data: hint, BucketName: origBucket}}
+	} else {
+		if err := json.Unmarshal(data, &hintedDatas); err != nil {
+			return err
+		}
+		hintedDatas = append(hintedDatas, models.HintedObject{Data: hint, BucketName: origBucket})
+	}
+	b, err := json.Marshal(hintedDatas)
+	if err != nil {
+		return err
+	}
+	if err = s.boltDB.Put(config.HINT_BUCKETNAME, origNode, b); err != nil {
+		return err
+	}
+	return nil
+}
