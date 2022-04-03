@@ -275,7 +275,6 @@ func (s *nodesServer) clientPutMultiple(target uint64, datas []models.HintedObje
 }
 
 func (s *nodesServer) sendHeartbeat(target uint64) bool {
-	// Create context to get replicas
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
