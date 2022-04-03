@@ -3,6 +3,7 @@ package nodes
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -271,6 +272,38 @@ func (s *nodesServer) clientPutMultiple(target uint64, datas []models.HintedObje
 		log.Println("Error encountered on CloseAndRecv: ", err)
 	}
 	return reply.IsDone
+}
+
+func (s *nodesServer) sendHeartbeat(target uint64) bool {
+	// Create context to get replicas
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	peerAddr := fmt.Sprintf("localhost:%v", target)
+	dialOptions := grpc.WithTransportCredentials(insecure.NewCredentials())
+	conn, err := grpc.DialContext(ctx, peerAddr, dialOptions)
+	if err != nil {
+		log.Printf("Error contacting node %v: %v\n", target+3000, err)
+		return false
+	}
+	log.Println("Node contacted")
+	defer conn.Close()
+
+	peer := pb.NewReplicationClient(conn)
+	token := make([]byte, 5)
+	_, err = rand.Read(token)
+	if err != nil {
+		log.Println("Error generating heartbeat message")
+		return false
+	}
+	log.Println("heartbeat message generated")
+	hrtResponse, err := peer.Heartbeat(ctx, &pb.HeartbeatRequest{Data: token})
+	if err != nil {
+		log.Printf("Error heartbeat in node %v: %v\n", target+3000, err.Error())
+		return false
+	}
+	return bytes.Equal(hrtResponse.Data, token)
+
 }
 
 func allSame(replicas []models.Object) bool {

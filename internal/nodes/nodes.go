@@ -240,14 +240,18 @@ func (s *nodesServer) hintHandlerService() {
 		delete := make([]string, 0)
 		err := s.boltDB.Iterate(config.HINT_BUCKETNAME, func(k, v []byte) error {
 			destinationNodename := string(k[:])
-			// TODO: ping nodename
-			// if nodename is alive
-			var hintedDatas []models.HintedObject
-			if err := json.Unmarshal(v, &hintedDatas); err != nil {
-				return err
-			}
-			if s.clientPutMultiple(s.ring.NodeMap[destinationNodename].NodeId-3000, hintedDatas) {
-				delete = append(delete, destinationNodename)
+			targetPort := s.ring.NodeMap[destinationNodename].NodeId - 3000
+			if s.sendHeartbeat(targetPort) {
+				log.Printf("HintHandlerService: node %s responded to heartbeat\n", destinationNodename)
+				var hintedDatas []models.HintedObject
+				if err := json.Unmarshal(v, &hintedDatas); err != nil {
+					return err
+				}
+				if s.clientPutMultiple(targetPort, hintedDatas) {
+					delete = append(delete, destinationNodename)
+				}
+			} else {
+				log.Printf("HintHandlerService: node %s failed to respond to heartbeat\n", destinationNodename)
 			}
 			return nil
 		})

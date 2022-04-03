@@ -131,6 +131,10 @@ func (s *nodesServer) PutMultiple(stream pb.Replication_PutMultipleServer) error
 	}
 }
 
+func (s *nodesServer) Heartbeat(ctx context.Context, req *pb.HeartbeatRequest) (*pb.HeartbeatResponse, error) {
+	return &pb.HeartbeatResponse{Data: req.Data}, nil
+}
+
 // TODO: Implement comparison of vector clocks
 // func compareVectorClocks(currentVC, incomingVC map[string]uint64) bool {
 // 	return true
