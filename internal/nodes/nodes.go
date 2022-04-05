@@ -20,10 +20,10 @@ import (
 
 type nodesServer struct {
 	pb.UnimplementedReplicationServer
-	boltDB *bolt.DB
-	ring   *consistenthash.Ring
-	nodeId int64
-	internalAddr int64
+	boltDB 			*bolt.DB
+	ring   			*consistenthash.Ring
+	nodeId 			int64
+	internalAddr 	int64
 }
 type UpdateNodeRequestBody struct {
 	NodeName uint64 `json:"nodename"`
@@ -34,15 +34,22 @@ type PutRequestBody struct {
 	Object     *models.Object `json:"object"`
 }
 
+// Only for partially successful/uncsuccessful PUT operations
+type PutResponseBody struct {
+	SuccessStatus string `json:"successStatus"`
+	Error string `json:"error"`
+}
+
 type GetRequestBody struct {
 	BucketName string `json:"bucketName"`
 	Key        string `json:"key"`
 }
 
 type GetResponseBody struct {
-	Context models.GetContext `json:"context"`
-	Value string `json:"value,omitempty"`
-	Conflicts []models.Object `json:"conflicts,omitempty"`
+	Context 		models.GetContext 	`json:"context"`
+	Value 			string 				`json:"value,omitempty"`
+	Conflicts 		[]models.Object 	`json:"conflicts,omitempty"`
+	SuccessStatus 	SuccessStatus 		`json:"successStatus"`
 }
 
 func (s *nodesServer) doPut(w http.ResponseWriter, r *http.Request) {
@@ -69,12 +76,26 @@ func (s *nodesServer) doPut(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 
-	putRepResult := s.serverPutReplicas(reqBody.BucketName, reqBody.Object.Key, dataBytes)
-
-	if putRepResult.Success {
+	putRepSuccessStatus, err := s.serverPutReplicas(reqBody.BucketName, reqBody.Object.Key, dataBytes)
+	switch(putRepSuccessStatus) {
+	case FULL_SUCCESS:
 		w.WriteHeader(http.StatusCreated)
-	} else {
-		http.Error(w, putRepResult.Err.Error(), http.StatusInternalServerError)
+	case PARTIAL_SUCCESS:
+		w.WriteHeader(http.StatusCreated)
+		putResponseBody := PutResponseBody{
+			SuccessStatus: "PARTIAL SUCCESS",
+			Error: err.Error(),
+		}
+		putResponseBodyBytes, _ := json.Marshal(putResponseBody)
+		w.Write(putResponseBodyBytes)
+	case UNSUCCESSFUL:
+		w.WriteHeader(http.StatusInternalServerError)
+		putResponseBody := PutResponseBody{
+			SuccessStatus: "UNSUCCESSFUL",
+			Error: err.Error(),
+		}
+		putResponseBodyBytes, _ := json.Marshal(putResponseBody)
+		w.Write(putResponseBodyBytes)
 	}
 }
 
@@ -105,9 +126,13 @@ func (s *nodesServer) doGet(w http.ResponseWriter, r *http.Request) {
 		return
 	} 
 	
+	if len(getRepResult.Replicas) == 0 {
+		http.Error(w, fmt.Sprintf("key {%v} not found in bucket {%v}", reqBody.Key, reqBody.BucketName), http.StatusNotFound)
+		return
+	}
+	
 	var getResponseBody GetResponseBody
 	var context models.GetContext
-
 	if getRepResult.HasVersionConflict {
 		getResponseBody.Conflicts = getRepResult.Replicas
 		context = models.GetContext{

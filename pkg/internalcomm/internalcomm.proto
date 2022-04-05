@@ -26,5 +26,4 @@ message GetRepRequest {
 
 message GetRepResponse {
     bytes data = 1;
-    bool hasVersionConflict = 2;
 }

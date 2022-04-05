@@ -13,8 +13,6 @@ import (
 	"github.com/chuamingkai/50.041DynamoProject/internal/models"
 	pb "github.com/chuamingkai/50.041DynamoProject/pkg/internalcomm"
 	"github.com/chuamingkai/50.041DynamoProject/pkg/vectorclock"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 func (s *nodesServer) doGetReplica(bucketName, key string) ([]byte, bool, error) {
@@ -47,15 +45,22 @@ func (s *nodesServer) doPutReplica(bucketName, key string, data []byte, senderId
 	currentTime := time.Now()
 	nodename := strconv.Itoa(int(senderId))
 
-	// TODO: Vector clock comparison to avoid versioning conflicts
 	existingRep, err := s.boltDB.Get(bucketName, key)
 	if err != nil {
 		return err
-	} else if existingRep != nil {
+	}
+	
+	if existingRep != nil {
 		var existingRepObject models.Object
 		if err := json.Unmarshal(existingRep, &existingRepObject); err != nil {
 			return err
 		}
+
+		// Check if incoming replica is an ancestor of the existing replica
+		if vectorclock.IsAncestorOf(existingRepObject.VC, incomingRepObject.VC) {
+			return nil
+		}
+
 		incomingRepObject.CreatedOn = existingRepObject.CreatedOn
 		incomingRepObject.LastModifiedOn = currentTime
 		incomingRepObject.VC = vectorclock.UpdateRecv(nodename, existingRepObject.VC)
@@ -84,13 +89,11 @@ func (s *nodesServer) doPutReplica(bucketName, key string, data []byte, senderId
 func (s *nodesServer) GetReplica(ctx context.Context, req *pb.GetRepRequest) (*pb.GetRepResponse, error) {
 	log.Printf("Received GET request for replica for key '%v'\n", req.Key)
 
-	// TODO: Figure out what to do when the replica's key is not found
 	replica, found, err := s.doGetReplica(req.BucketName, req.Key)
-	// log.Printf("Replica for key '%v' found\n", req.Key)
 	if err != nil {
 		return nil, err
 	} else if !found {
-		return nil, status.Error(codes.NotFound, "Key not found")
+		return &pb.GetRepResponse{Data: nil}, nil
 	} else {
 		var replicaBuffer bytes.Buffer
 		err = gob.NewEncoder(&replicaBuffer).Encode(replica)
