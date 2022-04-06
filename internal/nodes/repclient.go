@@ -138,7 +138,7 @@ func (s *nodesServer) Heartbeat(ctx context.Context, req *pb.HeartbeatRequest) (
 }
 
 func (s *nodesServer) HintedHandoff(ctx context.Context, req *pb.HintHandoffRequest) (*pb.HintHandoffResponse, error) {
-	log.Printf("Received hinted replica for node %s with data: %s\n", req.TargetNode, req.Data)
+	log.Printf("HintedHandoff: Received hinted replica for node %s with data: %s\n", req.TargetNode, req.Data)
 
 	var hint models.HintedObject
 	err := json.Unmarshal(req.Data, &hint)
@@ -150,7 +150,7 @@ func (s *nodesServer) HintedHandoff(ctx context.Context, req *pb.HintHandoffRequ
 		return &pb.HintHandoffResponse{IsDone: false}, err
 	}
 
-	log.Printf("Successfully received hinted replica for node %s with data: %s\n", req.TargetNode, req.Data)
+	log.Printf("HintedHandoff: Successfully received hinted replica for node %s with data: %s\n", req.TargetNode, req.Data)
 	return &pb.HintHandoffResponse{IsDone: true}, nil
 }
 

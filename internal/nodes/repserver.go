@@ -194,7 +194,6 @@ func (s *nodesServer) serverPutReplicas(bucketName, key string, data []byte) (Su
 				conn, err = grpc.Dial(peerAddr, dialOptions)
 				if err != nil {
 					log.Printf("Error contacting node %v: %v\n", vn.NodeId, err)
-					s.initiateHintedHandoff(vn, bucketName, data)
 				} else {
 					defer conn.Close()
 					peer := pb.NewReplicationClient(conn)
@@ -208,6 +207,7 @@ func (s *nodesServer) serverPutReplicas(bucketName, key string, data []byte) (Su
 					putSuccess: false,
 					err:        err,
 				}
+				s.initiateHintedHandoff(vn, bucketName, data)
 			} else {
 				notifyChan <- PutRepMessage{
 					peerId:     vn.NodeId,
@@ -327,21 +327,21 @@ func haveVersionConflicts(replicas []models.Object) bool {
 
 func (s *nodesServer) initiateHintedHandoff(originalTarget consistenthash.VirtualNode, bucketName string, replica []byte) {
 	i := strings.LastIndex(originalTarget.VirtualName, "_")
-	targetNode := originalTarget.VirtualName[:i]
+	origNode := originalTarget.VirtualName[:i]
 	var o models.Object
 	err := json.Unmarshal(replica, &o)
 	if err != nil {
-		log.Printf("Error unmarshalling object for hinted handoff")
+		log.Printf("HintedHandoff: Error unmarshalling object for hinted handoff")
 		return
 	}
 	hint := models.HintedObject{Data: o, BucketName: bucketName}
 	nextNode := originalTarget.Next
 	for nextNode != nil {
-		if nextNode.NodeId == uint64(s.nodeId) || nextNode.NodeId == originalTarget.NodeId {
+		if nextNode.NodeId == uint64(s.internalAddr) || nextNode.NodeId == originalTarget.NodeId {
 			nextNode = nextNode.Next
 			continue
 		}
-		isSuccess := s.sendHint(targetNode, bucketName, hint)
+		isSuccess := s.sendHint(origNode, nextNode.NodeId, hint)
 		if isSuccess {
 			return
 		}
@@ -349,11 +349,14 @@ func (s *nodesServer) initiateHintedHandoff(originalTarget consistenthash.Virtua
 	}
 	nextNode = s.ring.Nodes.Head
 	for nextNode.VirtualName != originalTarget.VirtualName {
-		if nextNode.NodeId == uint64(s.nodeId) || nextNode.NodeId == originalTarget.NodeId {
+		if nextNode.VirtualName == originalTarget.VirtualName {
+			return
+		}
+		if nextNode.NodeId == uint64(s.internalAddr) || nextNode.NodeId == originalTarget.NodeId {
 			nextNode = nextNode.Next
 			continue
 		}
-		isSuccess := s.sendHint(targetNode, bucketName, hint)
+		isSuccess := s.sendHint(origNode, nextNode.NodeId, hint)
 		if isSuccess {
 			return
 		}
@@ -361,30 +364,29 @@ func (s *nodesServer) initiateHintedHandoff(originalTarget consistenthash.Virtua
 	}
 }
 
-func (s *nodesServer) sendHint(targetNode string, bucketName string, hint models.HintedObject) bool {
+func (s *nodesServer) sendHint(targetNode string, receiverAddr uint64, hint models.HintedObject) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	target := s.ring.NodeMap[targetNode].NodeId
-	peerAddr := fmt.Sprintf("localhost:%v", target)
+	log.Printf("HintedHandoff: Receiver of hint: %d\n", receiverAddr)
+	peerAddr := fmt.Sprintf("localhost:%v", receiverAddr)
 	dialOptions := grpc.WithTransportCredentials(insecure.NewCredentials())
 	conn, err := grpc.DialContext(ctx, peerAddr, dialOptions)
 	if err != nil {
-		log.Printf("Error contacting node %v: %v\n", target+3000, err)
+		log.Printf("HintedHandoff: Error contacting node %v: %v\n", receiverAddr, err)
 		return false
 	}
-	log.Println("Node contacted")
 	defer conn.Close()
 
 	peer := pb.NewReplicationClient(conn)
 	hint_bytes, err := json.Marshal(hint)
 	if err != nil {
-		log.Println("Error marshalling hinted object")
+		log.Println("HintedHandoff: Error marshalling hinted object")
 		return false
 	}
 	hintResponse, err := peer.HintedHandoff(ctx, &pb.HintHandoffRequest{TargetNode: targetNode, Data: hint_bytes})
 	if err != nil {
-		log.Printf("Error heartbeat in node %v: %v\n", target+3000, err.Error())
+		log.Printf("HintedHandoff: Error sending hint to node %v: %v\n", receiverAddr, err.Error())
 		return false
 	}
 	return hintResponse.IsDone

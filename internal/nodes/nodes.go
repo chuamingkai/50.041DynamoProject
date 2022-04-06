@@ -297,7 +297,7 @@ func (s *nodesServer) hintHandlerService() {
 		delete := make([]string, 0)
 		err := s.boltDB.Iterate(config.HINT_BUCKETNAME, func(k, v []byte) error {
 			destinationNodename := string(k[:])
-			targetPort := s.ring.NodeMap[destinationNodename].NodeId - 3000
+			targetPort := s.ring.NodeMap[destinationNodename].NodeId
 			if s.sendHeartbeat(targetPort) {
 				log.Printf("HintHandlerService: node %s responded to heartbeat\n", destinationNodename)
 				var hintedDatas []models.HintedObject
