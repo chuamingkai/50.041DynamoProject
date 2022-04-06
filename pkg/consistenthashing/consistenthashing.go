@@ -37,8 +37,8 @@ type VirtualNode struct {
 }
 
 type ReallocationNotice struct {
-	targetNode *VirtualNode
-	newNode    *VirtualNode
+	TargetNode *VirtualNode
+	NewNode    *VirtualNode
 	// the targetNode sends newNode all the keys it has that is >= newNode.Hash
 }
 
@@ -162,8 +162,8 @@ func (r *Ring) AddNode(name string, id uint64) []ReallocationNotice {
 				continue
 			}
 			reAlloc = append(reAlloc, ReallocationNotice{
-				targetNode: target,
-				newNode:    vNode,
+				TargetNode: target,
+				NewNode:    vNode,
 			})
 		}
 	}
@@ -202,18 +202,25 @@ func (r *Ring) GetPreferenceList(key string) []VirtualNode {
 		num_replicate_possible = len(r.NodeMap)
 	}
 	for i := 0; i < num_replicate_possible-1; i++ {
+		fmt.Println(node)
 		if node.Next == nil {
 			node = *r.Nodes.Head
 		} else {
 			node = *node.Next
 		}
+		hit := false
 		for _, n := range prefList {
 			if node.NodeId == n.NodeId {
-				i--
-				continue
+				hit = true
+				break
 			}
 		}
-		prefList = append(prefList, node)
+		if hit {
+			i--
+			continue
+		} else {
+			prefList = append(prefList, node)
+		}
 	}
 	return prefList
 }
@@ -223,6 +230,7 @@ func (r *Ring) GetPreferenceList(key string) []VirtualNode {
 func (r *Ring) IsNodeResponsibleForKey(key string, id uint64) bool {
 	prefList := r.GetPreferenceList(key)
 	for _, n := range prefList {
+		fmt.Println(n)
 		if n.NodeId == id {
 			return true
 		}
