@@ -57,4 +57,6 @@ Sets up the node running the HTTP server at `PORTNUM`. This includes setting up 
 If the node suffered an intermittent fault (or to speed up testing), use the optional `FILEPATH` flag to specify the Ring backup file that it should read from.
 
 ### To run the Node Manager
--- TODO
+`go run cmd/nodemanager/main.go`
+
+Sets up the node manager at HTTP server `8000`. Does not maintain its own bbolt database nor gRPC server, instead managing the ring as a linked list of all nodes (including virtual). Add and delete node requests will update the linked list accordingly.
