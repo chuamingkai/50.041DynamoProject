@@ -8,6 +8,7 @@ service Replication {
     rpc GetReplica (GetRepRequest) returns (GetRepResponse);
     rpc PutMultiple (stream MultiPutRequest) returns (PutRepResponse);
     rpc Heartbeat (HeartbeatRequest) returns (HeartbeatResponse);
+    rpc HintedHandoff (HintHandoffRequest) returns (HintHandoffResponse);
 }
 
 message PutRepRequest {
@@ -38,11 +39,19 @@ message MultiPutRequest {
     int64 senderId = 4;
 }
 
-
 message HeartbeatRequest {
     bytes data = 1;
 }
 
 message HeartbeatResponse {
     bytes data = 1;
+}
+
+message HintHandoffRequest {
+    string targetNode = 1;
+    bytes data = 2;
+}
+
+message HintHandoffResponse {
+    bool isDone = 1;
 }

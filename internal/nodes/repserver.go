@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	config "github.com/chuamingkai/50.041DynamoProject/config"
@@ -193,6 +194,7 @@ func (s *nodesServer) serverPutReplicas(bucketName, key string, data []byte) (Su
 				conn, err = grpc.Dial(peerAddr, dialOptions)
 				if err != nil {
 					log.Printf("Error contacting node %v: %v\n", vn.NodeId, err)
+					s.initiateHintedHandoff(vn, bucketName, data)
 				} else {
 					defer conn.Close()
 					peer := pb.NewReplicationClient(conn)
@@ -323,26 +325,67 @@ func haveVersionConflicts(replicas []models.Object) bool {
 	return result
 }
 
-func (s *nodesServer) putInHintBucket(origNode string, origBucket string, hint models.Object) error {
-	data, err := s.boltDB.Get(config.HINT_BUCKETNAME, origNode)
+func (s *nodesServer) initiateHintedHandoff(originalTarget consistenthash.VirtualNode, bucketName string, replica []byte) {
+	i := strings.LastIndex(originalTarget.VirtualName, "_")
+	targetNode := originalTarget.VirtualName[:i]
+	var o models.Object
+	err := json.Unmarshal(replica, &o)
 	if err != nil {
-		return err
+		log.Printf("Error unmarshalling object for hinted handoff")
+		return
 	}
-	var hintedDatas []models.HintedObject
-	if data == nil {
-		hintedDatas = []models.HintedObject{{Data: hint, BucketName: origBucket}}
-	} else {
-		if err := json.Unmarshal(data, &hintedDatas); err != nil {
-			return err
+	hint := models.HintedObject{Data: o, BucketName: bucketName}
+	nextNode := originalTarget.Next
+	for nextNode != nil {
+		if nextNode.NodeId == uint64(s.nodeId) || nextNode.NodeId == originalTarget.NodeId {
+			nextNode = nextNode.Next
+			continue
 		}
-		hintedDatas = append(hintedDatas, models.HintedObject{Data: hint, BucketName: origBucket})
+		isSuccess := s.sendHint(targetNode, bucketName, hint)
+		if isSuccess {
+			return
+		}
+		nextNode = nextNode.Next
 	}
-	b, err := json.Marshal(hintedDatas)
+	nextNode = s.ring.Nodes.Head
+	for nextNode.VirtualName != originalTarget.VirtualName {
+		if nextNode.NodeId == uint64(s.nodeId) || nextNode.NodeId == originalTarget.NodeId {
+			nextNode = nextNode.Next
+			continue
+		}
+		isSuccess := s.sendHint(targetNode, bucketName, hint)
+		if isSuccess {
+			return
+		}
+		nextNode = nextNode.Next
+	}
+}
+
+func (s *nodesServer) sendHint(targetNode string, bucketName string, hint models.HintedObject) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	target := s.ring.NodeMap[targetNode].NodeId
+	peerAddr := fmt.Sprintf("localhost:%v", target)
+	dialOptions := grpc.WithTransportCredentials(insecure.NewCredentials())
+	conn, err := grpc.DialContext(ctx, peerAddr, dialOptions)
 	if err != nil {
-		return err
+		log.Printf("Error contacting node %v: %v\n", target+3000, err)
+		return false
 	}
-	if err = s.boltDB.Put(config.HINT_BUCKETNAME, origNode, b); err != nil {
-		return err
+	log.Println("Node contacted")
+	defer conn.Close()
+
+	peer := pb.NewReplicationClient(conn)
+	hint_bytes, err := json.Marshal(hint)
+	if err != nil {
+		log.Println("Error marshalling hinted object")
+		return false
 	}
-	return nil
+	hintResponse, err := peer.HintedHandoff(ctx, &pb.HintHandoffRequest{TargetNode: targetNode, Data: hint_bytes})
+	if err != nil {
+		log.Printf("Error heartbeat in node %v: %v\n", target+3000, err.Error())
+		return false
+	}
+	return hintResponse.IsDone
 }

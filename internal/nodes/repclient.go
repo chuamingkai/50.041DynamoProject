@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	config "github.com/chuamingkai/50.041DynamoProject/config"
 	"github.com/chuamingkai/50.041DynamoProject/internal/models"
 	pb "github.com/chuamingkai/50.041DynamoProject/pkg/internalcomm"
 	"github.com/chuamingkai/50.041DynamoProject/pkg/vectorclock"
@@ -134,6 +135,47 @@ func (s *nodesServer) PutMultiple(stream pb.Replication_PutMultipleServer) error
 
 func (s *nodesServer) Heartbeat(ctx context.Context, req *pb.HeartbeatRequest) (*pb.HeartbeatResponse, error) {
 	return &pb.HeartbeatResponse{Data: req.Data}, nil
+}
+
+func (s *nodesServer) HintedHandoff(ctx context.Context, req *pb.HintHandoffRequest) (*pb.HintHandoffResponse, error) {
+	log.Printf("Received hinted replica for node %s with data: %s\n", req.TargetNode, req.Data)
+
+	var hint models.HintedObject
+	err := json.Unmarshal(req.Data, &hint)
+	if err != nil {
+		return &pb.HintHandoffResponse{IsDone: false}, err
+	}
+	err = s.putInHintBucket(req.TargetNode, hint.BucketName, hint.Data)
+	if err != nil {
+		return &pb.HintHandoffResponse{IsDone: false}, err
+	}
+
+	log.Printf("Successfully received hinted replica for node %s with data: %s\n", req.TargetNode, req.Data)
+	return &pb.HintHandoffResponse{IsDone: true}, nil
+}
+
+func (s *nodesServer) putInHintBucket(origNode string, origBucket string, hint models.Object) error {
+	data, err := s.boltDB.Get(config.HINT_BUCKETNAME, origNode)
+	if err != nil {
+		return err
+	}
+	var hintedDatas []models.HintedObject
+	if data == nil {
+		hintedDatas = []models.HintedObject{{Data: hint, BucketName: origBucket}}
+	} else {
+		if err := json.Unmarshal(data, &hintedDatas); err != nil {
+			return err
+		}
+		hintedDatas = append(hintedDatas, models.HintedObject{Data: hint, BucketName: origBucket})
+	}
+	b, err := json.Marshal(hintedDatas)
+	if err != nil {
+		return err
+	}
+	if err = s.boltDB.Put(config.HINT_BUCKETNAME, origNode, b); err != nil {
+		return err
+	}
+	return nil
 }
 
 // TODO: Implement comparison of vector clocks

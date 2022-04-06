@@ -22,6 +22,7 @@ type ReplicationClient interface {
 	GetReplica(ctx context.Context, in *GetRepRequest, opts ...grpc.CallOption) (*GetRepResponse, error)
 	PutMultiple(ctx context.Context, opts ...grpc.CallOption) (Replication_PutMultipleClient, error)
 	Heartbeat(ctx context.Context, in *HeartbeatRequest, opts ...grpc.CallOption) (*HeartbeatResponse, error)
+	HintedHandoff(ctx context.Context, in *HintHandoffRequest, opts ...grpc.CallOption) (*HintHandoffResponse, error)
 }
 
 type replicationClient struct {
@@ -93,6 +94,15 @@ func (c *replicationClient) Heartbeat(ctx context.Context, in *HeartbeatRequest,
 	return out, nil
 }
 
+func (c *replicationClient) HintedHandoff(ctx context.Context, in *HintHandoffRequest, opts ...grpc.CallOption) (*HintHandoffResponse, error) {
+	out := new(HintHandoffResponse)
+	err := c.cc.Invoke(ctx, "/Replication/HintedHandoff", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ReplicationServer is the server API for Replication service.
 // All implementations must embed UnimplementedReplicationServer
 // for forward compatibility
@@ -101,6 +111,7 @@ type ReplicationServer interface {
 	GetReplica(context.Context, *GetRepRequest) (*GetRepResponse, error)
 	PutMultiple(Replication_PutMultipleServer) error
 	Heartbeat(context.Context, *HeartbeatRequest) (*HeartbeatResponse, error)
+	HintedHandoff(context.Context, *HintHandoffRequest) (*HintHandoffResponse, error)
 	mustEmbedUnimplementedReplicationServer()
 }
 
@@ -119,6 +130,9 @@ func (UnimplementedReplicationServer) PutMultiple(Replication_PutMultipleServer)
 }
 func (UnimplementedReplicationServer) Heartbeat(context.Context, *HeartbeatRequest) (*HeartbeatResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Heartbeat not implemented")
+}
+func (UnimplementedReplicationServer) HintedHandoff(context.Context, *HintHandoffRequest) (*HintHandoffResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method HintedHandoff not implemented")
 }
 func (UnimplementedReplicationServer) mustEmbedUnimplementedReplicationServer() {}
 
@@ -213,6 +227,24 @@ func _Replication_Heartbeat_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Replication_HintedHandoff_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HintHandoffRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ReplicationServer).HintedHandoff(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/Replication/HintedHandoff",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ReplicationServer).HintedHandoff(ctx, req.(*HintHandoffRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Replication_ServiceDesc is the grpc.ServiceDesc for Replication service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -231,6 +263,10 @@ var Replication_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Heartbeat",
 			Handler:    _Replication_Heartbeat_Handler,
+		},
+		{
+			MethodName: "HintedHandoff",
+			Handler:    _Replication_HintedHandoff_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
