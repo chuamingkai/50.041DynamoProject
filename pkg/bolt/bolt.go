@@ -12,7 +12,7 @@ type DB struct {
 
 // Setup database
 func ConnectDB(id int) (*DB, error) {
-	dbName := fmt.Sprintf("store/node%vstore.db", id)
+	dbName := fmt.Sprintf("store/boltdb/node%vstore.db", id)
 	db, err := bolt.Open(dbName, 0600, nil)
 	return &DB{DB: db}, err
 }

@@ -5,6 +5,7 @@ go 1.17
 require (
 	github.com/DistributedClocks/GoVector v0.0.0-20210402100930-db949c81a0af
 	github.com/gorilla/mux v1.8.0
+	github.com/joho/godotenv v1.4.0
 	go.etcd.io/bbolt v1.3.6
 	google.golang.org/grpc v1.45.0
 	google.golang.org/protobuf v1.26.0

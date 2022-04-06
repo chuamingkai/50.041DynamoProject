@@ -7,6 +7,7 @@ import (
 	"net"
 	"strconv"
 
+	"github.com/chuamingkai/50.041DynamoProject/config"
 	"github.com/chuamingkai/50.041DynamoProject/internal/nodes"
 	consistenthash "github.com/chuamingkai/50.041DynamoProject/pkg/consistenthashing"
 	pb "github.com/chuamingkai/50.041DynamoProject/pkg/internalcomm"
@@ -22,22 +23,30 @@ func main() {
 
 	portNumber := *portPtr
 	file := *ringFile
+
+	if err := config.LoadEnvFile(); err != nil {
+		log.Fatalf("Error loading .env file: %v\n", err.Error())
+	}
+
 	var ring *consistenthash.Ring
+
 	if file != "" {
 		r, err := consistenthash.ImportRingFromFile(file)
 		if err != nil {
 			log.Fatal("Error importing ring from file ", file)
 		}
-		fmt.Printf("Ring imported: %s\n", r.Nodes.TraverseAndPrint())
+		log.Printf("Ring imported: %s\n", r.Nodes.TraverseAndPrint())
 		ring = r
 	} else {
 		ring = consistenthash.NewRing()
-		// TODO: Node discovery
 		ring.AddNode(strconv.Itoa(portNumber), uint64(portNumber))
 	}
 
-	server := nodes.NewNodeServer(int64(portNumber), ring)
-	serverPtr := server.CreateServer()
+	server := nodes.NewNodeServer(int64(portNumber), int64(portNumber) - 3000, ring)
+	serverPtr, err := server.RunNodeServer()
+	if err != nil {
+		log.Fatalf("Failed to start node server: %v", err.Error())
+	}
 
 	// Create gRPC listener
 	grpcAddress := fmt.Sprintf("localhost:%v", *portPtr-3000)
