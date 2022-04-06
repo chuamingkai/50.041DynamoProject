@@ -38,8 +38,9 @@ type ClientRequest struct {
 
 // object to send to nodes:
 type UpdateNode struct {
-	Key    string `json:"key"`
-	PortNo uint64 `json:"portno"`
+	//Key    string `json:"key"`
+	//PortNo uint64 `json:"portno"`
+	NodeName uint64 `json:"nodename"`
 }
 
 // port 8000 home page display
@@ -71,47 +72,48 @@ func (m *NodeManager) handleRequests()  {
 func (m *NodeManager) addNodeReq(w http.ResponseWriter, r *http.Request) {
 
 	reqBody, _ := ioutil.ReadAll(r.Body)
-	var article UpdateNode
+	var newnode UpdateNode
 
-	var err error = json.Unmarshal(reqBody, &article)
+	var err error = json.Unmarshal(reqBody, &newnode)
 	if err != nil {
 		panic(err)
 	}
 	//Nodes = append(Nodes, article)
-	json.NewEncoder(w).Encode(&article)
-	// add new node to the ring
-	fmt.Println("Adding node", article.PortNo, " to existing ring.")
-	m.addNode(article.Key, article.PortNo)
-
+	json.NewEncoder(w).Encode(&newnode)
+	
+	
+	
 	exist := false
-	var newnode UpdateNode
 	for _, n := range m.RingList.NodeMap {
-		fmt.Println(n.NodeId, newnode.PortNo)
-		if n.NodeId == newnode.PortNo {
+		fmt.Println(n.NodeId, newnode.NodeName)
+		if n.NodeId == newnode.NodeName {
+			fmt.Println("node found:", newnode.NodeName)
 			exist = true
 		}
 	}
+
 	// Make request to nodes to addnode
 	if !exist {
 		if len(m.RingList.NodeMap) > 1 {
 			for _, node := range m.RingList.NodeMap {
-				fmt.Println("Requesting to add node to", article.PortNo)
+				fmt.Println("Requesting to add node to", newnode.NodeName)
 				postBody, _ := json.Marshal(newnode)
 				responseBody := bytes.NewBuffer(postBody)
 				resp, err := http.Post(fmt.Sprintf("http://localhost:%v/addnode", node.NodeId), "application/json", responseBody)
 				if err != nil {
 					// handle error
-					continue
+					panic(err)
 				}
 				// close response body when finished with it
 				defer resp.Body.Close()
 				body, err := io.ReadAll(resp.Body)
 				if err != nil {
-					continue
+					panic(err)
 				}
 				// this body is unreadable/may need another conversion first. Using simple string(body) causes a parsing error so this is roundabout
 				strBody := strconv.FormatUint(binary.LittleEndian.Uint64(body),16)
 				log.Println(strBody)
+				fmt.Println("Returned from adding.")
 				//fmt.Println("Response body addNode",string(body))
 			}
 		}
@@ -120,6 +122,12 @@ func (m *NodeManager) addNodeReq(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("Failed to add a node: already exists.")
 		http.Error(w, "Node already exists!", http.StatusBadRequest)
 	}
+	// add new node to the ring
+	fmt.Println("Adding node", newnode.NodeName, " to existing ring.")
+	stringName := strconv.FormatUint(newnode.NodeName,10)
+	m.addNode(stringName,newnode.NodeName)
+	
+	
 }
 
 func (m *NodeManager) delNodeReq(w http.ResponseWriter, r *http.Request) {
@@ -134,18 +142,13 @@ func (m *NodeManager) delNodeReq(w http.ResponseWriter, r *http.Request) {
 		panic(err)
 	}
 
-	// del node from the ring
-	fmt.Println("Removing node", delNode.Key, " from ring.")
-	//manager.removeNode(delNode.Key, delNode.PortNo)
-
 	exist := false
 	for _, n := range m.RingList.NodeMap {
-		if n.NodeId == delNode.PortNo {
+		if n.NodeId == delNode.NodeName {
 			exist = true
 		}
 	}
 	if exist {
-		m.RingList.RemoveNode(delNode.Key)
 
 		/*send http post request to all nodes it knows*/
 		if m.RingList.Nodes.Length > 1 {
@@ -165,13 +168,16 @@ func (m *NodeManager) delNodeReq(w http.ResponseWriter, r *http.Request) {
 				//Read the response body
 				body, err := ioutil.ReadAll(resp.Body)
 				if err != nil {
-					continue
+					panic(err)
 				}
 				// this body is unreadable/may need another conversion first. Using simple string(body) causes a parsing error so this is roundabout
 				strBody := strconv.FormatUint(binary.LittleEndian.Uint64(body),16)
 				log.Println(strBody)
 				//fmt.Println("Response body addNode",string(body))
-
+				fmt.Println("Returned from deletion")
+				fmt.Println("Removing node", delNode.NodeName, " from manager's ring.")
+				stringName := strconv.FormatUint(delNode.NodeName,10)
+				m.RingList.RemoveNode(stringName)
 			}
 		}
 
@@ -181,6 +187,7 @@ func (m *NodeManager) delNodeReq(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Node doesn't exist!", http.StatusServiceUnavailable)
 	}
 	json.NewEncoder(w).Encode(delNode)
+	
 }
 
 func returnSingleKey(w http.ResponseWriter, r *http.Request) {
@@ -239,13 +246,13 @@ func deleteKey(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	// we will need to extract the `id` of the article we
 	// wish to delete
-	id := vars["key"]
-
+	id := vars["nodeName"]
 	// we then need to loop through all our articles
 	for index, key := range Nodes {
 		// if our id path parameter matches one of our
 		// articles
-		if key.Key == id {
+		stringName := strconv.FormatUint(key.NodeName,10)
+		if stringName == id {
 			// updates our Articles array to remove the
 			// article
 			Nodes = append(Nodes[:index], Nodes[index+1:]...)
