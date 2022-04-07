@@ -71,7 +71,7 @@ func (s *nodesServer) doPut(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if node handles key
-	if !s.ring.IsNodeResponsibleForKey(reqBody.Object.Key, uint64(s.nodeId-3000)) {
+	if !s.ring.IsNodeResponsibleForKey(reqBody.Object.Key, uint64(s.internalAddr)) {
 		http.Error(w, "Node is not responsible for key!", http.StatusBadRequest)
 		return
 	}
@@ -124,7 +124,7 @@ func (s *nodesServer) doGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if node handles key
-	if !s.ring.IsNodeResponsibleForKey(reqBody.Key, uint64(s.nodeId-3000)) {
+	if !s.ring.IsNodeResponsibleForKey(reqBody.Key, uint64(s.internalAddr)) {
 		http.Error(w, "Node is not responsible for key!", http.StatusBadRequest)
 		return
 	}
