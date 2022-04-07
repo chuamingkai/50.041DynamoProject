@@ -47,9 +47,9 @@ type GetRequestBody struct {
 }
 
 type GetResponseBody struct {
-	Context       models.GetContext `json:"context"`
-	Value         string            `json:"value,omitempty"`
-	Conflicts     []models.Object   `json:"conflicts,omitempty"`
+	Context   models.GetContext `json:"context"`
+	Value     string            `json:"value,omitempty"`
+	Conflicts []models.Object   `json:"conflicts,omitempty"`
 }
 
 func (s *nodesServer) doPut(w http.ResponseWriter, r *http.Request) {
@@ -206,7 +206,7 @@ func (s *nodesServer) updateAddNode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !exist {
-		s.ring.AddNode(nodenameString, grpcAddress)
+		//s.ring.AddNode(nodenameString, grpcAddress)
 		s.serverReallocKeys(nodenameString, config.MAIN_BUCKETNAME, grpcAddress)
 
 		successMessage := fmt.Sprintf("Node %v added to ring.", newnode.NodeName)
@@ -228,11 +228,10 @@ func (s *nodesServer) updateDelNode(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	
+
 	exist := false
 	internalNodename := newnode.NodeName - 3000
 	externalNodenameString := strconv.FormatUint(newnode.NodeName, 10)
-	
 
 	for _, n := range s.ring.NodeMap {
 		if n.NodeId == internalNodename {
