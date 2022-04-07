@@ -25,6 +25,7 @@ func IsAncestorOf(clock1Map, clock2Map map[string]uint64) bool {
 	return clock1.Compare(clock2, vclock.Ancestor)
 }
 
+// Check if clock 2 is a descendant of clock 1
 func IsDescendantOf(clock1Map, clock2Map map[string]uint64) bool {
 	clock1 := vclock.New().CopyFromMap(clock1Map)
 	clock2 := vclock.New().CopyFromMap(clock2Map)
@@ -32,6 +33,7 @@ func IsDescendantOf(clock1Map, clock2Map map[string]uint64) bool {
 	return clock1.Compare(clock2, vclock.Descendant)
 }
 
+// Check if clock 2 is equal to clock 1
 func IsEqualTo(clock1Map, clock2Map map[string]uint64) bool {
 	clock1 := vclock.New().CopyFromMap(clock1Map)
 	clock2 := vclock.New().CopyFromMap(clock2Map)
@@ -39,6 +41,7 @@ func IsEqualTo(clock1Map, clock2Map map[string]uint64) bool {
 	return clock1.Compare(clock2, vclock.Equal)
 }
 
+// Check if clock 2 is concurrent with clock 1
 func IsConcurrentWith(clock1Map, clock2Map map[string]uint64) bool {
 	clock1 := vclock.New().CopyFromMap(clock1Map)
 	clock2 := vclock.New().CopyFromMap(clock2Map)

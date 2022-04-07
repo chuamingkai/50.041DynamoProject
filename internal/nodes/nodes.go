@@ -50,7 +50,6 @@ type GetResponseBody struct {
 	Context       models.GetContext `json:"context"`
 	Value         string            `json:"value,omitempty"`
 	Conflicts     []models.Object   `json:"conflicts,omitempty"`
-	SuccessStatus SuccessStatus     `json:"successStatus"`
 }
 
 func (s *nodesServer) doPut(w http.ResponseWriter, r *http.Request) {
@@ -196,46 +195,57 @@ func (s *nodesServer) updateAddNode(w http.ResponseWriter, r *http.Request) {
 	exist := false
 	nodenameString := strconv.FormatUint(newnode.NodeName, 10)
 
-	// Change node id to gRPC address of node
-	// newnode.NodeName -= 3000
+	// Change node name to gRPC address of node
 	grpcAddress := newnode.NodeName - 3000
 
 	for _, n := range s.ring.NodeMap {
-		if n.NodeId == uint64(newnode.NodeName) {
+		if n.NodeId == grpcAddress {
 			exist = true
 		}
 		break
 	}
 
 	if !exist {
+		successMessage := fmt.Sprintf("Node %v added to ring.", newnode.NodeName)
 		s.ring.AddNode(nodenameString, grpcAddress)
-		log.Printf("Node %v added to ring.\n", newnode.NodeName)
-		// fmt.Println(s.ring.Nodes.TraverseAndPrint())
-		json.NewEncoder(w).Encode(s.ring.Nodes.TraverseAndPrint())
+		log.Println(successMessage)
+		log.Println(s.ring.Nodes.TraverseAndPrint())
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(successMessage)
 	} else {
 		http.Error(w, "Node already exists!", http.StatusBadRequest)
 	}
 }
 
+// TODO: What happens when node receives delete request for itself?
 func (s *nodesServer) updateDelNode(w http.ResponseWriter, r *http.Request) {
 	reqBody, _ := ioutil.ReadAll(r.Body)
 
 	var newnode UpdateNodeRequestBody
-	json.Unmarshal(reqBody, &newnode)
+	if err := json.Unmarshal(reqBody, &newnode); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	
 	exist := false
-	nodenameString := strconv.FormatUint(newnode.NodeName, 10)
+	internalNodename := newnode.NodeName - 3000
+	externalNodenameString := strconv.FormatUint(newnode.NodeName, 10)
+	
 
 	for _, n := range s.ring.NodeMap {
-		if n.NodeId == newnode.NodeName {
+		if n.NodeId == internalNodename {
 			exist = true
 		}
 	}
 	if exist {
-		s.ring.RemoveNode(nodenameString)
-		fmt.Println(s.ring.Nodes.TraverseAndPrint())
-		json.NewEncoder(w).Encode(newnode)
+		successMessage := fmt.Sprintf("Node %v removed from ring.", newnode.NodeName)
+		s.ring.RemoveNode(externalNodenameString)
+		log.Println(successMessage)
+		log.Println(s.ring.Nodes.TraverseAndPrint())
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(successMessage)
 	} else {
-		http.Error(w, "Node doesn't exists!", http.StatusServiceUnavailable)
+		http.Error(w, "Node doesn't exist!", http.StatusBadRequest)
 	}
 }
 

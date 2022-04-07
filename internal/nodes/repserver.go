@@ -154,9 +154,10 @@ func (s *nodesServer) serverGetReplicas(bucketName, key string) (*GetRepResult, 
 			SuccessStatus: UNSUCCESSFUL,
 		}, nil
 	} else {
+		conflictingReps := getConflictingReps(replicas)
 		return &GetRepResult{
-			Replicas:           replicas,
-			HasVersionConflict: haveVersionConflicts(replicas),
+			Replicas:           conflictingReps,
+			HasVersionConflict: len(conflictingReps) > 1,
 			WriteCoordinator:   writeCoordinator,
 			SuccessStatus:      FULL_SUCCESS,
 		}, nil
@@ -311,18 +312,32 @@ func (s *nodesServer) sendHeartbeat(target uint64) bool {
 
 }
 
-// Check for version conflicts among replicas received in GET operation
-func haveVersionConflicts(replicas []models.Object) bool {
-	result := false
-	clock1 := replicas[0].VC
+// Get list of conflicting replicas
+func getConflictingReps(replicas []models.Object) []models.Object {
+	output := make([]models.Object, 0, len(replicas))
+
+	output = append(output, replicas[0])
+	targetVClock := replicas[0].VC
 
 	for i := 1; i < len(replicas); i++ {
-		clock2 := replicas[i].VC
-		if !vectorclock.IsConcurrentWith(clock1, clock2) {
-			result = true
+		replicaVClock := replicas[i].VC
+		if vectorclock.IsEqualTo(replicaVClock, targetVClock) || vectorclock.IsDescendantOf(targetVClock, replicaVClock) {
+			continue
+		} else if vectorclock.IsDescendantOf(replicaVClock, targetVClock) {
+			targetVClock = replicaVClock // Drop current target and replace with descendant
+
+			// Remove remaining ancestors
+			for j := 0; j < len(output); j++ {
+				if vectorclock.IsAncestorOf(output[j].VC, targetVClock) {
+					output = append(output[:j], output[:j+1]...)
+				}
+			}
+		} else if vectorclock.IsConcurrentWith(replicaVClock, targetVClock) {
+			output = append(output, replicas[i])
 		}
 	}
-	return result
+
+	return output
 }
 
 func (s *nodesServer) initiateHintedHandoff(originalTarget consistenthash.VirtualNode, bucketName string, replica []byte) {
