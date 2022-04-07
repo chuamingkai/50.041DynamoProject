@@ -2,10 +2,8 @@ package main
 
 import (
 	"bytes"
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -74,13 +72,14 @@ func (m *NodeManager) addNodeReq(w http.ResponseWriter, r *http.Request) {
 
 	reqBody, _ := ioutil.ReadAll(r.Body)
 	var newnode UpdateNode
+	var listofexistingnode []UpdateNode
 
 	var err error = json.Unmarshal(reqBody, &newnode)
 	if err != nil {
-		panic(err)
+		log.Fatal()
 	}
 	//Nodes = append(Nodes, article)
-	json.NewEncoder(w).Encode(&newnode)
+	//json.NewEncoder(w).Encode(&newnode)
 
 	exist := false
 	for _, n := range m.RingList.NodeMap {
@@ -88,12 +87,13 @@ func (m *NodeManager) addNodeReq(w http.ResponseWriter, r *http.Request) {
 		if n.NodeId == newnode.NodeName {
 			fmt.Println("node found:", newnode.NodeName)
 			exist = true
+			break
 		}
 	}
 
 	// Make request to nodes to addnode
 	if !exist {
-		if len(m.RingList.NodeMap) > 1 {
+		if len(m.RingList.NodeMap) >= 1 {
 			for _, node := range m.RingList.NodeMap {
 				fmt.Println("Requesting to add node to", newnode.NodeName)
 				postBody, _ := json.Marshal(newnode)
@@ -105,26 +105,29 @@ func (m *NodeManager) addNodeReq(w http.ResponseWriter, r *http.Request) {
 				}
 				// close response body when finished with it
 				defer resp.Body.Close()
-				body, err := io.ReadAll(resp.Body)
-				if err != nil {
-					panic(err)
-				}
+				listofexistingnode = append(listofexistingnode, UpdateNode{NodeName: node.NodeId})
+				//body, err := io.ReadAll(resp.Body)
+				//if err != nil {
+				//	panic(err)
+				//}
 				// this body is unreadable/may need another conversion first. Using simple string(body) causes a parsing error so this is roundabout
-				strBody := strconv.FormatUint(binary.LittleEndian.Uint64(body), 16)
-				log.Println(strBody)
-				fmt.Println("Returned from adding.")
+				//strBody := strconv.FormatUint(binary.LittleEndian.Uint64(body), 16)
+				//log.Println(strBody)
+				//fmt.Println("Returned from adding.")
 				//fmt.Println("Response body addNode",string(body))
 			}
 		}
-		json.NewEncoder(w).Encode(m.RingList.Nodes.TraverseAndPrint())
+		// add new node to the ring
+		fmt.Println("Adding node", newnode.NodeName, " to existing ring.")
+		stringName := strconv.FormatUint(newnode.NodeName, 10)
+		m.addNode(stringName, newnode.NodeName)
+		//json.NewEncoder(w).Encode(m.RingList.Nodes.TraverseAndPrint())
+		fmt.Println(listofexistingnode)
+		json.NewEncoder(w).Encode(listofexistingnode)
 	} else {
 		fmt.Println("Failed to add a node: already exists.")
 		http.Error(w, "Node already exists!", http.StatusBadRequest)
 	}
-	// add new node to the ring
-	fmt.Println("Adding node", newnode.NodeName, " to existing ring.")
-	stringName := strconv.FormatUint(newnode.NodeName, 10)
-	m.addNode(stringName, newnode.NodeName)
 
 }
 
@@ -137,19 +140,23 @@ func (m *NodeManager) delNodeReq(w http.ResponseWriter, r *http.Request) {
 
 	var err error = json.Unmarshal(reqBody, &delNode)
 	if err != nil {
-		panic(err)
+		log.Fatal()
 	}
 
 	exist := false
 	for _, n := range m.RingList.NodeMap {
 		if n.NodeId == delNode.NodeName {
 			exist = true
+			break
 		}
 	}
 	if exist {
+		fmt.Println("Removing node", delNode.NodeName, " from manager's ring.")
+		stringName := strconv.FormatUint(delNode.NodeName, 10)
+		m.RingList.RemoveNode(stringName)
 
 		/*send http post request to all nodes it knows*/
-		if m.RingList.Nodes.Length > 1 {
+		if m.RingList.Nodes.Length >= 1 {
 
 			for _, node := range m.RingList.NodeMap {
 
@@ -164,19 +171,18 @@ func (m *NodeManager) delNodeReq(w http.ResponseWriter, r *http.Request) {
 				// close response body when finished with it
 				defer resp.Body.Close()
 				//Read the response body
-				body, err := ioutil.ReadAll(resp.Body)
-				if err != nil {
-					panic(err)
-				}
+				//body, err := ioutil.ReadAll(resp.Body)
+				//if err != nil {
+				//	panic(err)
+				//}
 				// this body is unreadable/may need another conversion first. Using simple string(body) causes a parsing error so this is roundabout
-				strBody := strconv.FormatUint(binary.LittleEndian.Uint64(body), 16)
-				log.Println(strBody)
+				//strBody := strconv.FormatUint(binary.LittleEndian.Uint64(body), 16)
+				//log.Println(strBody)
 				//fmt.Println("Response body addNode",string(body))
-				fmt.Println("Returned from deletion")
-				fmt.Println("Removing node", delNode.NodeName, " from manager's ring.")
-				stringName := strconv.FormatUint(delNode.NodeName, 10)
-				m.RingList.RemoveNode(stringName)
+				//fmt.Println("Returned from deletion")
+
 			}
+
 		}
 
 		fmt.Println(m.RingList.Nodes.TraverseAndPrint())
