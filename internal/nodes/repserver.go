@@ -391,3 +391,81 @@ func (s *nodesServer) sendHint(targetNode string, receiverAddr uint64, hint mode
 	}
 	return hintResponse.IsDone
 }
+
+/*addnode and realloc keys to the respective nodes*/
+func (s *nodesServer) serverReallocKeys(nodename, bucketName string, portno uint64) bool {
+	var nodes []uint64
+	notice := s.ring.AddNode(nodename, portno)
+	log.Printf("Node %v added to ring.\n", nodename)
+	log.Println(s.ring.Nodes.TraverseAndPrint())
+	log.Println(notice)
+	if len(notice) > 0 {
+		delete := make([]string, 0)
+		for _, node := range notice {
+			//fmt.Println("TargetNode", *node.TargetNode)
+			//fmt.Println("TargetNode", *node.TargetNode)
+			done := false
+			//log.Println(node.TargetNode.NodeId, uint64(s.nodeId))
+			if node.TargetNode.NodeId == uint64(s.nodeId)-3000 {
+				for _, v := range nodes {
+					if v == node.NewNode.NodeId {
+						done = true
+						break
+					}
+				}
+
+				if !done {
+					log.Printf("reallocating keys to %v\n", node.NewNode.NodeId)
+					err := s.boltDB.Iterate(config.MAIN_BUCKETNAME, func(k, v []byte) error {
+
+						//destinationNodename := string(k[:])
+						targetPort := node.NewNode.NodeId
+						//fmt.Println(string(k[:]))
+						//fmt.Printf("TargetPort %v NodeHash %v KeyHash%v\n", targetPort, node.NewNode.Hash, consistenthash.Hash(string(k[:])))
+						var hintedDatas []models.HintedObject
+						var reallocObj models.Object
+						if node.NewNode.Hash.Cmp(consistenthash.Hash(string(k[:]))) <= 0 {
+
+							if err := json.Unmarshal(v, &reallocObj); err != nil {
+								//fmt.Println(reallocObj)
+
+								return err
+							} else {
+								//fmt.Println(reallocObj)
+								hintedDatas = append(hintedDatas, models.HintedObject{BucketName: bucketName, Data: reallocObj})
+								//fmt.Println(hintedDatas)
+							}
+						}
+
+						if s.clientPutMultiple(targetPort, hintedDatas) {
+							delete = append(delete, reallocObj.Key)
+
+						} else {
+							log.Printf("Reallocation error")
+						}
+						return nil
+
+					})
+					if err != nil {
+						log.Printf("Reallocation error: %s\n", err)
+
+					}
+					//nodes = append(nodes, node.NewNode.NodeId)
+				}
+			}
+
+		}
+		fmt.Println("delete", delete)
+		for _, v := range delete {
+			err := s.boltDB.DeleteKey(config.MAIN_BUCKETNAME, v)
+			if v != "" {
+				log.Printf("Successfully handed off key %s\n", v)
+			}
+			if err != nil {
+				log.Printf("Reallocation error: %s\n", err)
+			}
+		}
+	}
+	return true
+
+}

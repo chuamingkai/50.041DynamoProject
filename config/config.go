@@ -16,6 +16,7 @@ var RING_BACKUP_FILEFORMAT string      // File format of the ring backup file. %
 var RING_BACKUP_INTERVAL time.Duration // Time interval in seconds that ring backup is performed periodically
 var HINT_CHECK_INTERVAL time.Duration  // Time interval in seconds that hint bucket is checked periodically
 var HINT_BUCKETNAME string             // Reserved name for hint bucket
+var MAIN_BUCKETNAME string
 
 func LoadEnvFile() error {
 	var err error
@@ -57,6 +58,8 @@ func LoadEnvFile() error {
 	HINT_CHECK_INTERVAL = time.Duration(intermediate_time) * time.Second
 
 	HINT_BUCKETNAME = os.Getenv("HINT_BUCKETNAME")
+
+	MAIN_BUCKETNAME = os.Getenv("MAIN_BUCKETNAME")
 
 	return nil
 }

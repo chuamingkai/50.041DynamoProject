@@ -49,7 +49,9 @@ func main() {
 		ring = r
 	} else {
 		ring = consistenthash.NewRing()
-		ring.AddNode(strconv.Itoa(portNumber), uint64(portNumber))
+		ring.AddNode(strconv.Itoa(portNumber), uint64(portNumber)-3000)
+		log.Printf("Ring imported: %s\n", ring.Nodes.TraverseAndPrint())
+
 	}
 
 	server := nodes.NewNodeServer(int64(portNumber), int64(portNumber)-3000, ring)
@@ -101,14 +103,15 @@ func main() {
 		jsonDataFromHttp, err1 := ioutil.ReadAll(resp.Body)
 		if err1 == nil {
 			json.Unmarshal([]byte(jsonDataFromHttp), &newnodes)
+			if len(newnodes) > 0 {
+				for _, n := range newnodes {
 
-			for _, n := range newnodes {
+					ring.AddNode(strconv.FormatUint(n.NodeName, 10), n.NodeName-3000)
+					log.Printf("Notified of the existence of Node %v", n.NodeName)
 
-				ring.AddNode(strconv.FormatUint(newnode.NodeName, 10), n.NodeName-3000)
-				log.Printf("Notified of the existence of Node %v", n.NodeName)
-
+				}
+				log.Println(ring.Nodes.TraverseAndPrint())
 			}
-			log.Println(ring.Nodes.TraverseAndPrint())
 		}
 	}
 

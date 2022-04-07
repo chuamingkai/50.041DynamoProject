@@ -71,7 +71,7 @@ func (s *nodesServer) doPut(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if node handles key
-	if !s.ring.IsNodeResponsibleForKey(reqBody.Object.Key, uint64(s.nodeId)) {
+	if !s.ring.IsNodeResponsibleForKey(reqBody.Object.Key, uint64(s.nodeId-3000)) {
 		http.Error(w, "Node is not responsible for key!", http.StatusBadRequest)
 		return
 	}
@@ -124,7 +124,7 @@ func (s *nodesServer) doGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if node handles key
-	if !s.ring.IsNodeResponsibleForKey(reqBody.Key, uint64(s.nodeId)) {
+	if !s.ring.IsNodeResponsibleForKey(reqBody.Key, uint64(s.nodeId-3000)) {
 		http.Error(w, "Node is not responsible for key!", http.StatusBadRequest)
 		return
 	}
@@ -208,9 +208,10 @@ func (s *nodesServer) updateAddNode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !exist {
-		s.ring.AddNode(nodenameString, grpcAddress)
-		log.Printf("Node %v added to ring.\n", newnode.NodeName)
-		// fmt.Println(s.ring.Nodes.TraverseAndPrint())
+		//s.ring.AddNode(nodenameString, grpcAddress)
+		s.serverReallocKeys(nodenameString, config.MAIN_BUCKETNAME, grpcAddress)
+		//log.Printf("Node %v added to ring.\n", newnode.NodeName)
+		//fmt.Println(s.ring.Nodes.TraverseAndPrint())
 		json.NewEncoder(w).Encode(s.ring.Nodes.TraverseAndPrint())
 	} else {
 		http.Error(w, "Node already exists!", http.StatusBadRequest)
@@ -338,6 +339,12 @@ func NewNodeServer(port, internalAddr int64, newRing *consistenthash.Ring) *node
 		err = db.CreateBucket(config.HINT_BUCKETNAME)
 		if err != nil {
 			log.Fatal("Error creating hint bucket:", err)
+		}
+	}
+	if !db.BucketExists(config.MAIN_BUCKETNAME) {
+		err = db.CreateBucket(config.MAIN_BUCKETNAME)
+		if err != nil {
+			log.Fatal("Error creating main bucket:", err)
 		}
 	}
 	return &nodesServer{
