@@ -45,6 +45,9 @@ func testRingIntegrity(r *Ring) bool {
 }
 
 func TestSingleAdd(t *testing.T) {
+	if err := config.LoadEnvFile(); err != nil {
+		t.Errorf("Error loading .env file: %v\n", err.Error())
+	}
 	name := "A"
 	a := NewRing()
 	a.AddNode(name, 8000)
@@ -85,6 +88,9 @@ func TestSingleAdd(t *testing.T) {
 }
 
 func TestMultipleAdd(t *testing.T) {
+	if err := config.LoadEnvFile(); err != nil {
+		t.Errorf("Error loading .env file: %v\n", err.Error())
+	}
 	names := []string{"A", "B", "C", "D"}
 	ip := []uint64{8000, 8001, 8002, 8003}
 	a := NewRing()
@@ -128,6 +134,9 @@ func TestMultipleAdd(t *testing.T) {
 }
 
 func TestSingleAddAndDelete(t *testing.T) {
+	if err := config.LoadEnvFile(); err != nil {
+		t.Errorf("Error loading .env file: %v\n", err.Error())
+	}
 	name := "A"
 	a := NewRing()
 	a.AddNode(name, 8000)
@@ -179,6 +188,9 @@ func TestSingleAddAndDelete(t *testing.T) {
 }
 
 func TestMultipleAddAndDelete(t *testing.T) {
+	if err := config.LoadEnvFile(); err != nil {
+		t.Errorf("Error loading .env file: %v\n", err.Error())
+	}
 	names := []string{"A", "B"}
 	ip := []uint64{8000, 8001}
 	a := NewRing()
@@ -269,6 +281,9 @@ func TestMultipleAddAndDelete(t *testing.T) {
 }
 
 func TestFindingKeys(t *testing.T) {
+	if err := config.LoadEnvFile(); err != nil {
+		t.Errorf("Error loading .env file: %v\n", err.Error())
+	}
 	keys := []string{"abc", "fdsafd", "hello", "1232187"}
 	names := []string{"A", "B"}
 	ip := []uint64{8000, 8001}

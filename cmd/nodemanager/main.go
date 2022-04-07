@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,10 +10,10 @@ import (
 	"log"
 	"net/http"
 	"strconv"
-	"encoding/binary"
 
 	"github.com/gorilla/mux"
 
+	"github.com/chuamingkai/50.041DynamoProject/config"
 	consistenthash "github.com/chuamingkai/50.041DynamoProject/pkg/consistenthashing"
 )
 
@@ -52,7 +53,7 @@ func homePage(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Endpoint Hit: nodemanager http server")
 }
 
-func (m *NodeManager) handleRequests()  {
+func (m *NodeManager) handleRequests() {
 
 	fmt.Println("Node manager started at 8000!")
 	myRouter := mux.NewRouter().StrictSlash(true)
@@ -80,9 +81,7 @@ func (m *NodeManager) addNodeReq(w http.ResponseWriter, r *http.Request) {
 	}
 	//Nodes = append(Nodes, article)
 	json.NewEncoder(w).Encode(&newnode)
-	
-	
-	
+
 	exist := false
 	for _, n := range m.RingList.NodeMap {
 		fmt.Println(n.NodeId, newnode.NodeName)
@@ -111,7 +110,7 @@ func (m *NodeManager) addNodeReq(w http.ResponseWriter, r *http.Request) {
 					panic(err)
 				}
 				// this body is unreadable/may need another conversion first. Using simple string(body) causes a parsing error so this is roundabout
-				strBody := strconv.FormatUint(binary.LittleEndian.Uint64(body),16)
+				strBody := strconv.FormatUint(binary.LittleEndian.Uint64(body), 16)
 				log.Println(strBody)
 				fmt.Println("Returned from adding.")
 				//fmt.Println("Response body addNode",string(body))
@@ -124,10 +123,9 @@ func (m *NodeManager) addNodeReq(w http.ResponseWriter, r *http.Request) {
 	}
 	// add new node to the ring
 	fmt.Println("Adding node", newnode.NodeName, " to existing ring.")
-	stringName := strconv.FormatUint(newnode.NodeName,10)
-	m.addNode(stringName,newnode.NodeName)
-	
-	
+	stringName := strconv.FormatUint(newnode.NodeName, 10)
+	m.addNode(stringName, newnode.NodeName)
+
 }
 
 func (m *NodeManager) delNodeReq(w http.ResponseWriter, r *http.Request) {
@@ -171,12 +169,12 @@ func (m *NodeManager) delNodeReq(w http.ResponseWriter, r *http.Request) {
 					panic(err)
 				}
 				// this body is unreadable/may need another conversion first. Using simple string(body) causes a parsing error so this is roundabout
-				strBody := strconv.FormatUint(binary.LittleEndian.Uint64(body),16)
+				strBody := strconv.FormatUint(binary.LittleEndian.Uint64(body), 16)
 				log.Println(strBody)
 				//fmt.Println("Response body addNode",string(body))
 				fmt.Println("Returned from deletion")
 				fmt.Println("Removing node", delNode.NodeName, " from manager's ring.")
-				stringName := strconv.FormatUint(delNode.NodeName,10)
+				stringName := strconv.FormatUint(delNode.NodeName, 10)
 				m.RingList.RemoveNode(stringName)
 			}
 		}
@@ -187,7 +185,7 @@ func (m *NodeManager) delNodeReq(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Node doesn't exist!", http.StatusServiceUnavailable)
 	}
 	json.NewEncoder(w).Encode(delNode)
-	
+
 }
 
 func returnSingleKey(w http.ResponseWriter, r *http.Request) {
@@ -251,7 +249,7 @@ func deleteKey(w http.ResponseWriter, r *http.Request) {
 	for index, key := range Nodes {
 		// if our id path parameter matches one of our
 		// articles
-		stringName := strconv.FormatUint(key.NodeName,10)
+		stringName := strconv.FormatUint(key.NodeName, 10)
 		if stringName == id {
 			// updates our Articles array to remove the
 			// article
@@ -259,6 +257,7 @@ func deleteKey(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
+
 /*
 func (m *NodeManager) removeNode(name string, id uint64) {
 	fmt.Println("Removing node", name, " at port:", id)
@@ -286,7 +285,9 @@ func main() {
 
 	//nodeNames := []string{"1", "2", "3", "4"}
 	//nodeNumbers := []uint64{9030, 9040, 9050, 9060}
-
+	if err := config.LoadEnvFile(); err != nil {
+		log.Fatalf("Error loading .env file: %v\n", err.Error())
+	}
 	managerRing := consistenthash.NewRing()
 	m := initManager(8000, managerRing)
 
@@ -296,6 +297,7 @@ func main() {
 	m.handleRequests()
 
 }
+
 /*
 func (m *NodeManager) testManager(nodenames []string, nodeIDs []uint64) {
 	for i := 0; i < len(nodenames); i++ {
