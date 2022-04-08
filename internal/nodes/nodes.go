@@ -250,37 +250,32 @@ func (s *nodesServer) updateDelNode(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *nodesServer) RunNodeServer() (*http.Server, error) {
-	if s.ring == nil {
-		return nil, errors.New("nil ring pointer")
+func (s *nodesServer) readFromBucket(w http.ResponseWriter, r *http.Request) {
+	pathVars := mux.Vars(r)
+	var ok bool
+	var bucketName string
+	if bucketName, ok = pathVars["bucketName"]; !ok {
+		http.Error(w, "Missing bucket name", http.StatusBadRequest)
+		return
 	}
 
-	log.Println("Setting up node at port", s.nodeId)
-
-	/*creates a new instance of a mux router*/
-	myRouter := mux.NewRouter().StrictSlash(true)
-
-	// Node handling
-	myRouter.HandleFunc("/addnode", s.updateAddNode).Methods("POST")
-	myRouter.HandleFunc("/delnode", s.updateDelNode).Methods("POST")
-
-	/*write new entry*/
-	myRouter.HandleFunc("/data", s.doPut).Methods("POST")
-
-	/*return single entry*/
-	myRouter.HandleFunc("/data", s.doGet).Methods("GET")
-
-	// Bucket creation
-	myRouter.HandleFunc("/db/{bucketName}", s.doCreateBucket).Methods("POST")
-
-	server := http.Server{
-		Addr:    fmt.Sprintf(":%v", s.nodeId), //:{port}
-		Handler: myRouter,
+	bucketObjectsBytes, err := s.boltDB.GetAllObjects(bucketName)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
-	go s.ringBackupService()
-	go s.hintHandlerService()
-	return &server, nil
+	var bucketObjects []models.Object
+	for _, objBytes := range bucketObjectsBytes {
+		var obj models.Object
+		if err := json.Unmarshal(objBytes, &obj); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		bucketObjects = append(bucketObjects, obj)
+	}
+
+	json.NewEncoder(w).Encode(bucketObjects)
 }
 
 // ringBackupService is a function that runs periodically backups the ring
@@ -336,6 +331,42 @@ func (s *nodesServer) hintHandlerService() {
 			}
 		}
 	}
+}
+
+func (s *nodesServer) RunNodeServer() (*http.Server, error) {
+	if s.ring == nil {
+		return nil, errors.New("nil ring pointer")
+	}
+
+	log.Println("Setting up node at port", s.nodeId)
+
+	/*creates a new instance of a mux router*/
+	myRouter := mux.NewRouter().StrictSlash(true)
+
+	// Node handling
+	myRouter.HandleFunc("/addnode", s.updateAddNode).Methods("POST")
+	myRouter.HandleFunc("/delnode", s.updateDelNode).Methods("POST")
+
+	/*write new entry*/
+	myRouter.HandleFunc("/data", s.doPut).Methods("POST")
+
+	/*return single entry*/
+	myRouter.HandleFunc("/data", s.doGet).Methods("GET")
+
+	// Read from bucket
+	myRouter.HandleFunc("/db/{bucketName}", s.readFromBucket).Methods("GET")
+
+	// Bucket creation
+	myRouter.HandleFunc("/db/{bucketName}", s.doCreateBucket).Methods("POST")
+
+	server := http.Server{
+		Addr:    fmt.Sprintf(":%v", s.nodeId), //:{port}
+		Handler: myRouter,
+	}
+
+	go s.ringBackupService()
+	go s.hintHandlerService()
+	return &server, nil
 }
 
 func NewNodeServer(port, internalAddr int64, newRing *consistenthash.Ring) *nodesServer {

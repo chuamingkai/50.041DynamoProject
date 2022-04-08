@@ -1,6 +1,7 @@
 package bolt
 
 import (
+	"errors"
 	"fmt"
 
 	bolt "go.etcd.io/bbolt"
@@ -61,6 +62,7 @@ func (db *DB) Get(bucketName, key string) ([]byte, error) {
 	return value, err
 }
 
+// Execute function for each key-value pair in bucket
 func (db *DB) Iterate(bucketname string, handle_kv func(k, v []byte) error) error {
 	err := db.DB.Update(func(tx *bolt.Tx) error {
 		// Assume bucket exists and has keys
@@ -70,10 +72,34 @@ func (db *DB) Iterate(bucketname string, handle_kv func(k, v []byte) error) erro
 	return err
 }
 
+// Delete key from bucket
 func (db *DB) DeleteKey(bucketname string, key string) error {
 	err := db.DB.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketname))
 		return b.Delete([]byte(key))
 	})
 	return err
+}
+
+// Return list of all objects in a bucket
+func (db *DB) GetAllObjects(bucketname string) ([][]byte, error) {	
+	var bucketObjects [][]byte
+	err := db.DB.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucketname))
+		if b == nil {
+			return errors.New("bucket does not exist")
+		}
+		c := b.Cursor()
+
+		for k, v := c.First(); k != nil; k, v = c.Next() {
+			bucketObjects = append(bucketObjects, v)
+		}
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	} else {
+		return bucketObjects, nil
+	}
 }
