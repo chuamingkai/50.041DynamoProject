@@ -250,7 +250,8 @@ func (s *nodesServer) updateDelNode(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *nodesServer) readFromBucket(w http.ResponseWriter, r *http.Request) {
+// Get all objects inside a bucket
+func (s *nodesServer) doGetAllBucketObjects(w http.ResponseWriter, r *http.Request) {
 	pathVars := mux.Vars(r)
 	var ok bool
 	var bucketName string
@@ -276,6 +277,16 @@ func (s *nodesServer) readFromBucket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(bucketObjects)
+}
+
+// Get all buckets inside the database
+func (s *nodesServer) getAllBuckets(w http.ResponseWriter, r *http.Request) {
+	bucketNames, err := s.boltDB.GetAllBuckets()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	} else {
+		json.NewEncoder(w).Encode(bucketNames)
+	}
 }
 
 // ringBackupService is a function that runs periodically backups the ring
@@ -347,14 +358,17 @@ func (s *nodesServer) RunNodeServer() (*http.Server, error) {
 	myRouter.HandleFunc("/addnode", s.updateAddNode).Methods("POST")
 	myRouter.HandleFunc("/delnode", s.updateDelNode).Methods("POST")
 
-	/*write new entry*/
+	// Write new entry
 	myRouter.HandleFunc("/data", s.doPut).Methods("POST")
 
-	/*return single entry*/
+	// Return single entry
 	myRouter.HandleFunc("/data", s.doGet).Methods("GET")
 
+	// Get all bucket names
+	myRouter.HandleFunc("/db", s.getAllBuckets).Methods("GET")
+
 	// Read from bucket
-	myRouter.HandleFunc("/db/{bucketName}", s.readFromBucket).Methods("GET")
+	myRouter.HandleFunc("/db/{bucketName}", s.doGetAllBucketObjects).Methods("GET")
 
 	// Bucket creation
 	myRouter.HandleFunc("/db/{bucketName}", s.doCreateBucket).Methods("POST")

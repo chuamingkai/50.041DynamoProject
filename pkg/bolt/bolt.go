@@ -103,3 +103,15 @@ func (db *DB) GetAllObjects(bucketname string) ([][]byte, error) {
 		return bucketObjects, nil
 	}
 }
+
+// Return list of all buckets in the database
+func (db *DB) GetAllBuckets() ([]string, error) {
+	var bucketNames []string
+	err := db.DB.View(func(tx *bolt.Tx) error {
+		return tx.ForEach(func(name []byte, _ *bolt.Bucket) error {
+			bucketNames = append(bucketNames, string(name))
+			return nil
+		})
+	})
+	return bucketNames, err
+}
