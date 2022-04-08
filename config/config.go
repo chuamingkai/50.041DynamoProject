@@ -17,6 +17,7 @@ var RING_BACKUP_INTERVAL time.Duration // Time interval in seconds that ring bac
 var HINT_CHECK_INTERVAL time.Duration  // Time interval in seconds that hint bucket is checked periodically
 var HINT_BUCKETNAME string             // Reserved name for hint bucket
 var MAIN_BUCKETNAME string
+var REGISTRATION_URL string 			// Node registration URL
 
 func LoadEnvFile() error {
 	var err error
@@ -60,6 +61,8 @@ func LoadEnvFile() error {
 	HINT_BUCKETNAME = os.Getenv("HINT_BUCKETNAME")
 
 	MAIN_BUCKETNAME = os.Getenv("MAIN_BUCKETNAME")
+
+	REGISTRATION_URL = os.Getenv("REGISTRATION_URL")
 
 	return nil
 }
