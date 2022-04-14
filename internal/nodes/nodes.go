@@ -396,12 +396,12 @@ func NewNodeServer(port, internalAddr int64, newRing *consistenthash.Ring) *node
 			log.Fatal("Error creating hint bucket:", err)
 		}
 	}
-	if !db.BucketExists(config.MAIN_BUCKETNAME) {
+	/*if !db.BucketExists(config.MAIN_BUCKETNAME) {
 		err = db.CreateBucket(config.MAIN_BUCKETNAME)
 		if err != nil {
 			log.Fatal("Error creating main bucket:", err)
 		}
-	}
+	}*/
 	return &nodesServer{
 		nodeId:       port,
 		internalAddr: internalAddr,
