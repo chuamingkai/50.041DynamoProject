@@ -415,7 +415,7 @@ func (s *nodesServer) serverReallocKeys(nodename, bucketName string, portno uint
 	log.Println(s.ring.Nodes.TraverseAndPrint())
 	log.Println(notice)
 	if len(notice) > 0 {
-		delete := make([]models.HintedObject, 0)
+		delete := make([]string, 0)
 		for _, node := range notice {
 			//fmt.Println("TargetNode", *node.TargetNode)
 			//fmt.Println("TargetNode", *node.TargetNode)
@@ -430,66 +430,51 @@ func (s *nodesServer) serverReallocKeys(nodename, bucketName string, portno uint
 				}
 
 				if !done {
-					bucketNames, errb := s.boltDB.GetAllBuckets()
-					fmt.Println(bucketNames)
+					log.Printf("reallocating keys to %v\n", node.NewNode.NodeId)
+					err := s.boltDB.Iterate(config.MAIN_BUCKETNAME, func(k, v []byte) error {
 
-					hashnode := node.TargetNode
-					for i := 0; i < config.MIN_WRITES-2; i++ {
-						hashnode = hashnode.Prev
-					}
-					if errb == nil {
-						for _, bucketname := range bucketNames {
-							if bucketname == "hints" {
-								continue
+						//destinationNodename := string(k[:])
+						targetPort := node.NewNode.NodeId
+						//fmt.Println(string(k[:]))
+						//fmt.Printf("TargetPort %v NodeHash %v KeyHash%v\n", targetPort, node.NewNode.Hash, consistenthash.Hash(string(k[:])))
+						var hintedDatas []models.HintedObject
+						var reallocObj models.Object
+						if node.NewNode.Hash.Cmp(consistenthash.Hash(string(k[:]))) <= 0 {
+
+							if err := json.Unmarshal(v, &reallocObj); err != nil {
+								//fmt.Println(reallocObj)
+
+								return err
+							} else {
+								//fmt.Println(reallocObj)
+								hintedDatas = append(hintedDatas, models.HintedObject{BucketName: bucketName, Data: reallocObj})
+								//fmt.Println(hintedDatas)
 							}
-
-							log.Printf("reallocating keys to %v, for %s\n", node.NewNode.NodeId, bucketname)
-							err := s.boltDB.Iterate(bucketname, func(k, v []byte) error {
-
-								//destinationNodename := string(k[:])
-								targetPort := node.NewNode.NodeId
-								//fmt.Println(string(k[:]))
-								//fmt.Printf("TargetPort %v NodeHash %v KeyHash%v\n", hashnode.Hash, node.NewNode.Hash, consistenthash.Hash(string(k[:])))
-								var hintedDatas []models.HintedObject
-								var reallocObj models.Object
-								if hashnode.Hash.Cmp(consistenthash.Hash(string(k[:]))) <= 0 {
-
-									if err := json.Unmarshal(v, &reallocObj); err != nil {
-										//fmt.Println(reallocObj)
-
-										return err
-									} else {
-										fmt.Println(reallocObj)
-										hintedDatas = append(hintedDatas, models.HintedObject{BucketName: bucketname, Data: reallocObj})
-										//fmt.Println(hintedDatas)
-									}
-								}
-
-								if s.clientPutMultiple(targetPort, hintedDatas) {
-									delete = append(delete, models.HintedObject{BucketName: bucketname, Data: reallocObj})
-
-								} else {
-									log.Printf("Reallocation error")
-								}
-								return nil
-
-							})
-							if err != nil {
-								log.Printf("Reallocation error: %s\n", err)
-
-							}
-							nodes = append(nodes, node.NewNode.NodeId)
 						}
+
+						if s.clientPutMultiple(targetPort, hintedDatas) {
+							delete = append(delete, reallocObj.Key)
+
+						} else {
+							log.Printf("Reallocation error")
+						}
+						return nil
+
+					})
+					if err != nil {
+						log.Printf("Reallocation error: %s\n", err)
+
 					}
+					//nodes = append(nodes, node.NewNode.NodeId)
 				}
 			}
 
 		}
-		//fmt.Println("delete", delete)
+		fmt.Println("delete", delete)
 		for _, v := range delete {
-			err := s.boltDB.DeleteKey(v.BucketName, v.Data.Key)
-			if v.Data.Key != "" {
-				log.Printf("Successfully handed off key from %s bucket %s\n", v.BucketName, v.Data.Key)
+			err := s.boltDB.DeleteKey(config.MAIN_BUCKETNAME, v)
+			if v != "" {
+				log.Printf("Successfully handed off key %s\n", v)
 			}
 			if err != nil {
 				log.Printf("Reallocation error: %s\n", err)
