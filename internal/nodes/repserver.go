@@ -415,7 +415,7 @@ func (s *nodesServer) serverReallocKeys(nodename, bucketName string, portno uint
 	log.Println(s.ring.Nodes.TraverseAndPrint())
 	log.Println(notice)
 	if len(notice) > 0 {
-		delete := make([]models.HintedObject, 0)
+		//delete := make([]models.HintedObject, 0)
 		for _, node := range notice {
 			//fmt.Println("TargetNode", *node.TargetNode)
 			//fmt.Println("TargetNode", *node.TargetNode)
@@ -441,7 +441,7 @@ func (s *nodesServer) serverReallocKeys(nodename, bucketName string, portno uint
 							if bucketname == "hints" {
 								continue
 							}
-							log.Printf("reallocating keys to from %s bucket %v\n", bucketname, node.NewNode.NodeId)
+							log.Printf("reallocating keys to %v from %s bucket \n", node.NewNode.NodeId, bucketname)
 							err := s.boltDB.Iterate(bucketname, func(k, v []byte) error {
 
 								//destinationNodename := string(k[:])
@@ -463,10 +463,10 @@ func (s *nodesServer) serverReallocKeys(nodename, bucketName string, portno uint
 										//fmt.Println(hintedDatas)
 									}
 									/*delete keys that are now responsible by new node*/
-									if node.NewNode.Hash.Cmp(consistenthash.Hash(string(k[:]))) <= 0 {
-										delete = append(delete, models.HintedObject{BucketName: bucketname, Data: reallocObj})
+									//if node.NewNode.Hash.Cmp(consistenthash.Hash(string(k[:]))) <= 0 {
+									//	delete = append(delete, models.HintedObject{BucketName: bucketname, Data: reallocObj})
 
-									}
+									//}
 
 								}
 
@@ -491,16 +491,80 @@ func (s *nodesServer) serverReallocKeys(nodename, bucketName string, portno uint
 
 		}
 		//fmt.Println("delete", delete)
-		for _, v := range delete {
-			err := s.boltDB.DeleteKey(v.BucketName, v.Data.Key)
-			if v.Data.Key != "" {
-				log.Printf("Successfully handed off key %s from bucket %s\n", v.Data.Key, v.BucketName)
+		/*
+			for _, v := range delete {
+				err := s.boltDB.DeleteKey(v.BucketName, v.Data.Key)
+				if v.Data.Key != "" {
+					log.Printf("Successfully handed off key %s from bucket %s\n", v.Data.Key, v.BucketName)
+				}
+				if err != nil {
+					log.Printf("Reallocation error: %s\n", err)
+				}
 			}
-			if err != nil {
-				log.Printf("Reallocation error: %s\n", err)
-			}
-		}
+		*/
 	}
 	return true
+
+}
+
+func (s *nodesServer) delnodeReallocKeys(nodename string) {
+	s.ring.RemoveNode(nodename)
+	for _, n := range s.ring.NodeMap {
+		hashnode := n.VirtualNodes[0]
+		for i := 0; i < config.REPLICATION_FACTOR-1; i++ {
+			hashnode = hashnode.Prev
+		}
+		bucketNames, errb := s.boltDB.GetAllBuckets()
+		if errb == nil {
+			for _, bucketname := range bucketNames {
+				if bucketname == "hints" {
+					continue
+				}
+				log.Printf("reallocating keys from %s bucket to %v\n", bucketname, n.NodeId)
+				err := s.boltDB.Iterate(bucketname, func(k, v []byte) error {
+
+					//destinationNodename := string(k[:])
+					targetPort := n.NodeId
+					//fmt.Println(string(k[:]))
+					//fmt.Printf("TargetPort %v NodeHash %v KeyHash%v\n", targetPort, node.NewNode.Hash, consistenthash.Hash(string(k[:])))
+					var hintedDatas []models.HintedObject
+					var reallocObj models.Object
+					/*transfer keys including responsible replicas*/
+					if hashnode.Hash.Cmp(consistenthash.Hash(string(k[:]))) <= 0 {
+
+						if err := json.Unmarshal(v, &reallocObj); err != nil {
+							//fmt.Println(reallocObj)
+
+							return err
+						} else {
+							//fmt.Println(reallocObj)
+							hintedDatas = append(hintedDatas, models.HintedObject{BucketName: bucketname, Data: reallocObj})
+							//fmt.Println(hintedDatas)
+						}
+						/*delete keys that are now responsible by new node*/
+						//if node.NewNode.Hash.Cmp(consistenthash.Hash(string(k[:]))) <= 0 {
+						//	delete = append(delete, models.HintedObject{BucketName: bucketname, Data: reallocObj})
+
+						//}
+
+					}
+
+					if s.clientPutMultiple(targetPort, hintedDatas) {
+						//delete = append(delete, reallocObj.Key)
+
+					} else {
+						log.Printf("Reallocation error")
+					}
+					return nil
+
+				})
+				if err != nil {
+					log.Printf("Reallocation error: %s\n", err)
+
+				}
+			}
+		}
+
+	}
 
 }
