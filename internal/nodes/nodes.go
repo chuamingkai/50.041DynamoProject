@@ -219,6 +219,17 @@ func (s *nodesServer) updateAddNode(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *nodesServer) confirmDelNode(w http.ResponseWriter, r *http.Request) {
+	reqBody, _ := ioutil.ReadAll(r.Body)
+
+	var node UpdateNodeRequestBody
+	if err := json.Unmarshal(reqBody, &node); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.delnodeReallocKeys(strconv.FormatUint(node.NodeName, 10))
+}
+
 // TODO: What happens when node receives delete request for itself?
 func (s *nodesServer) updateDelNode(w http.ResponseWriter, r *http.Request) {
 	reqBody, _ := ioutil.ReadAll(r.Body)
@@ -357,6 +368,7 @@ func (s *nodesServer) RunNodeServer() (*http.Server, error) {
 	// Node handling
 	myRouter.HandleFunc("/addnode", s.updateAddNode).Methods("POST")
 	myRouter.HandleFunc("/delnode", s.updateDelNode).Methods("POST")
+	myRouter.HandleFunc("/confirmdel", s.confirmDelNode).Methods("POST")
 
 	// Write new entry
 	myRouter.HandleFunc("/data", s.doPut).Methods("POST")

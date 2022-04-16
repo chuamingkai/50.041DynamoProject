@@ -153,7 +153,7 @@ func (m *NodeManager) delNodeReq(w http.ResponseWriter, r *http.Request) {
 	if exist {
 		fmt.Println("Removing node", delNode.NodeName, " from manager's ring.")
 		stringName := strconv.FormatUint(delNode.NodeName, 10)
-		m.RingList.RemoveNode(stringName)
+		//m.RingList.RemoveNode(stringName)
 
 		/*send http post request to all nodes it knows*/
 		if m.RingList.Nodes.Length >= 1 {
@@ -163,6 +163,15 @@ func (m *NodeManager) delNodeReq(w http.ResponseWriter, r *http.Request) {
 				postBody, _ := json.Marshal(delNode)
 				responseBody := bytes.NewBuffer(postBody)
 				// make Req to nodes to delete
+				if node.NodeId == delNode.NodeName {
+					resp, err := http.Post(fmt.Sprintf("http://localhost:%v/confirmdel", node.NodeId), "application/json", responseBody)
+					if err != nil {
+						log.Fatalf("An Error Occured %v", err)
+					}
+					// close response body when finished with it
+					defer resp.Body.Close()
+				}
+
 				resp, err := http.Post(fmt.Sprintf("http://localhost:%v/delnode", node.NodeId), "application/json", responseBody)
 				//Handle Error
 				if err != nil {
@@ -182,6 +191,7 @@ func (m *NodeManager) delNodeReq(w http.ResponseWriter, r *http.Request) {
 				//fmt.Println("Returned from deletion")
 
 			}
+			m.RingList.RemoveNode(stringName)
 
 		}
 

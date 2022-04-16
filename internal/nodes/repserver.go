@@ -508,11 +508,21 @@ func (s *nodesServer) serverReallocKeys(nodename, bucketName string, portno uint
 }
 
 func (s *nodesServer) delnodeReallocKeys(nodename string) {
+	fmt.Println("removing", nodename)
 	s.ring.RemoveNode(nodename)
 	for _, n := range s.ring.NodeMap {
+		//fmt.Println(s.ring.NodeMap)
+
 		hashnode := n.VirtualNodes[0]
+		targetPort := hashnode.NodeId
+		//fmt.Println(targetPort)
+
 		for i := 0; i < config.REPLICATION_FACTOR-1; i++ {
-			hashnode = hashnode.Prev
+
+			a := hashnode.Prev
+			if a != nil {
+				hashnode = a
+			}
 		}
 		bucketNames, errb := s.boltDB.GetAllBuckets()
 		if errb == nil {
@@ -521,15 +531,20 @@ func (s *nodesServer) delnodeReallocKeys(nodename string) {
 					continue
 				}
 				log.Printf("reallocating keys from %s bucket to %v\n", bucketname, n.NodeId)
+
 				err := s.boltDB.Iterate(bucketname, func(k, v []byte) error {
 
 					//destinationNodename := string(k[:])
-					targetPort := n.NodeId
+					//targetPort := n.NodeId
+					//fmt.Println("port", targetPort)
 					//fmt.Println(string(k[:]))
 					//fmt.Printf("TargetPort %v NodeHash %v KeyHash%v\n", targetPort, node.NewNode.Hash, consistenthash.Hash(string(k[:])))
 					var hintedDatas []models.HintedObject
 					var reallocObj models.Object
 					/*transfer keys including responsible replicas*/
+					//fmt.Println(hashnode.NodeId)
+					//fmt.Println(hashnode.Hash)
+					//fmt.Println(consistenthash.Hash(string(k[:])))
 					if hashnode.Hash.Cmp(consistenthash.Hash(string(k[:]))) <= 0 {
 
 						if err := json.Unmarshal(v, &reallocObj); err != nil {
