@@ -202,7 +202,6 @@ func (r *Ring) GetPreferenceList(key string) []VirtualNode {
 		num_replicate_possible = len(r.NodeMap)
 	}
 	for i := 0; i < num_replicate_possible-1; i++ {
-		fmt.Println(node)
 		if node.Next == nil {
 			node = *r.Nodes.Head
 		} else {
