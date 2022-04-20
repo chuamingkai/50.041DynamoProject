@@ -514,6 +514,8 @@ func (s *nodesServer) serverReallocKeys(nodename, bucketName string, portno uint
 }
 
 func (s *nodesServer) delnodeReallocKeys(nodename string) {
+	var nodes []uint64
+
 	for _, l := range s.ring.NodeMap[fmt.Sprint(s.nodeId)].VirtualNodes {
 		hashnode := l
 		if hashnode.Prev != nil {
@@ -525,61 +527,71 @@ func (s *nodesServer) delnodeReallocKeys(nodename string) {
 		}
 
 		targetPort := hashnode.NodeId
+		done := false
+		for _, v := range nodes {
+			if v == hashnode.NodeId {
+				done = true
+				break
+			}
+		}
+		if !done {
 
-		bucketNames, errb := s.boltDB.GetAllBuckets()
-		if errb == nil {
-			for _, bucketname := range bucketNames {
-				if bucketname == "hints" {
-					continue
-				}
-				log.Printf("reallocating keys from %s bucket to %v\n", bucketname, hashnode.NodeId)
+			bucketNames, errb := s.boltDB.GetAllBuckets()
+			if errb == nil {
+				for _, bucketname := range bucketNames {
+					if bucketname == "hints" {
+						continue
+					}
+					log.Printf("reallocating keys from %s bucket to %v\n", bucketname, hashnode.NodeId)
 
-				err := s.boltDB.Iterate(bucketname, func(k, v []byte) error {
+					err := s.boltDB.Iterate(bucketname, func(k, v []byte) error {
 
-					//destinationNodename := string(k[:])
-					//targetPort := n.NodeId
-					//fmt.Println("port", targetPort)
-					//fmt.Println(string(k[:]))
-					//fmt.Printf("TargetPort %v NodeHash %v KeyHash%v\n", targetPort, node.NewNode.Hash, consistenthash.Hash(string(k[:])))
-					var hintedDatas []models.HintedObject
-					var reallocObj models.Object
-					/*transfer keys including responsible replicas*/
-					//fmt.Println(hashnode.NodeId)
-					//fmt.Println(hashnode.Hash)
-					//fmt.Println(consistenthash.Hash(string(k[:])))
-					if l.Hash.Cmp(consistenthash.Hash(string(k[:]))) <= 0 {
+						//destinationNodename := string(k[:])
+						//targetPort := n.NodeId
+						//fmt.Println("port", targetPort)
+						//fmt.Println(string(k[:]))
+						//fmt.Printf("TargetPort %v NodeHash %v KeyHash%v\n", targetPort, node.NewNode.Hash, consistenthash.Hash(string(k[:])))
+						var hintedDatas []models.HintedObject
+						var reallocObj models.Object
+						/*transfer keys including responsible replicas*/
+						//fmt.Println(hashnode.NodeId)
+						//fmt.Println(hashnode.Hash)
+						//fmt.Println(consistenthash.Hash(string(k[:])))
+						if l.Hash.Cmp(consistenthash.Hash(string(k[:]))) <= 0 {
 
-						if err := json.Unmarshal(v, &reallocObj); err != nil {
-							//fmt.Println(reallocObj)
+							if err := json.Unmarshal(v, &reallocObj); err != nil {
+								//fmt.Println(reallocObj)
 
-							return err
-						} else {
-							//fmt.Println(reallocObj)
-							hintedDatas = append(hintedDatas, models.HintedObject{BucketName: bucketname, Data: reallocObj})
-							//fmt.Println(hintedDatas)
+								return err
+							} else {
+								//fmt.Println(reallocObj)
+								hintedDatas = append(hintedDatas, models.HintedObject{BucketName: bucketname, Data: reallocObj})
+								//fmt.Println(hintedDatas)
+							}
+							/*delete keys that are now responsible by new node*/
+							//if node.NewNode.Hash.Cmp(consistenthash.Hash(string(k[:]))) <= 0 {
+							//	delete = append(delete, models.HintedObject{BucketName: bucketname, Data: reallocObj})
+
+							//}
+
 						}
-						/*delete keys that are now responsible by new node*/
-						//if node.NewNode.Hash.Cmp(consistenthash.Hash(string(k[:]))) <= 0 {
-						//	delete = append(delete, models.HintedObject{BucketName: bucketname, Data: reallocObj})
 
-						//}
+						if s.clientPutMultiple(targetPort, hintedDatas) {
+							//delete = append(delete, reallocObj.Key)
+
+						} else {
+							log.Printf("Reallocation error")
+						}
+						return nil
+
+					})
+					if err != nil {
+						log.Printf("Reallocation error: %s\n", err)
 
 					}
-
-					if s.clientPutMultiple(targetPort, hintedDatas) {
-						//delete = append(delete, reallocObj.Key)
-
-					} else {
-						log.Printf("Reallocation error")
-					}
-					return nil
-
-				})
-				if err != nil {
-					log.Printf("Reallocation error: %s\n", err)
-
 				}
 			}
+			nodes = append(nodes, hashnode.NodeId)
 		}
 
 	}
