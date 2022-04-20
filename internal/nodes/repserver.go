@@ -433,7 +433,13 @@ func (s *nodesServer) serverReallocKeys(nodename, bucketName string, portno uint
 
 					hashnode := node.NewNode
 					for i := 0; i < config.REPLICATION_FACTOR-1; i++ {
-						hashnode = hashnode.Prev
+						if hashnode.Prev != nil {
+							hashnode = hashnode.Prev
+						} else {
+							for hashnode.Next != nil {
+								hashnode = hashnode.Next
+							}
+						}
 					}
 					bucketNames, errb := s.boltDB.GetAllBuckets()
 					if errb == nil {
