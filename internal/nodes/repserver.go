@@ -514,29 +514,25 @@ func (s *nodesServer) serverReallocKeys(nodename, bucketName string, portno uint
 }
 
 func (s *nodesServer) delnodeReallocKeys(nodename string) {
-	fmt.Println("removing", nodename)
-	s.ring.RemoveNode(nodename)
-	for _, n := range s.ring.NodeMap {
-		//fmt.Println(s.ring.NodeMap)
-
-		hashnode := n.VirtualNodes[0]
-		targetPort := hashnode.NodeId
-		//fmt.Println(targetPort)
-
-		for i := 0; i < config.REPLICATION_FACTOR-1; i++ {
-
-			a := hashnode.Prev
-			if a != nil {
-				hashnode = a
+	for _, l := range s.ring.NodeMap[fmt.Sprint(s.nodeId)].VirtualNodes {
+		hashnode := l
+		if hashnode.Prev != nil {
+			hashnode = hashnode.Prev
+		} else {
+			for hashnode.Next != nil {
+				hashnode = hashnode.Next
 			}
 		}
+
+		targetPort := hashnode.NodeId
+
 		bucketNames, errb := s.boltDB.GetAllBuckets()
 		if errb == nil {
 			for _, bucketname := range bucketNames {
 				if bucketname == "hints" {
 					continue
 				}
-				log.Printf("reallocating keys from %s bucket to %v\n", bucketname, n.NodeId)
+				log.Printf("reallocating keys from %s bucket to %v\n", bucketname, hashnode.NodeId)
 
 				err := s.boltDB.Iterate(bucketname, func(k, v []byte) error {
 
@@ -551,7 +547,7 @@ func (s *nodesServer) delnodeReallocKeys(nodename string) {
 					//fmt.Println(hashnode.NodeId)
 					//fmt.Println(hashnode.Hash)
 					//fmt.Println(consistenthash.Hash(string(k[:])))
-					if hashnode.Hash.Cmp(consistenthash.Hash(string(k[:]))) <= 0 {
+					if l.Hash.Cmp(consistenthash.Hash(string(k[:]))) <= 0 {
 
 						if err := json.Unmarshal(v, &reallocObj); err != nil {
 							//fmt.Println(reallocObj)
@@ -587,5 +583,8 @@ func (s *nodesServer) delnodeReallocKeys(nodename string) {
 		}
 
 	}
+
+	fmt.Println("removing", nodename)
+	s.ring.RemoveNode(nodename)
 
 }
