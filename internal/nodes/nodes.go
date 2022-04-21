@@ -207,10 +207,10 @@ func (s *nodesServer) updateAddNode(w http.ResponseWriter, r *http.Request) {
 
 	if !exist {
 		//s.ring.AddNode(nodenameString, grpcAddress)
-		s.serverReallocKeys(nodenameString, config.MAIN_BUCKETNAME, grpcAddress)
+		s.serverReallocKeys(nodenameString, grpcAddress)
 
 		successMessage := fmt.Sprintf("Node %v added to ring.", newnode.NodeName)
-		log.Println(successMessage)
+		// log.Println(successMessage)
 		log.Println(s.ring.Nodes.TraverseAndPrint())
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(successMessage)
@@ -408,12 +408,7 @@ func NewNodeServer(port, internalAddr int64, newRing *consistenthash.Ring) *node
 			log.Fatal("Error creating hint bucket:", err)
 		}
 	}
-	/*if !db.BucketExists(config.MAIN_BUCKETNAME) {
-		err = db.CreateBucket(config.MAIN_BUCKETNAME)
-		if err != nil {
-			log.Fatal("Error creating main bucket:", err)
-		}
-	}*/
+
 	return &nodesServer{
 		nodeId:       port,
 		internalAddr: internalAddr,
