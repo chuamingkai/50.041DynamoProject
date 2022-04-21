@@ -418,7 +418,7 @@ func (s *nodesServer) serverReallocKeys(nodename, bucketName string, portno uint
 		//delete := make([]models.HintedObject, 0)
 		for _, node := range notice {
 			//fmt.Println("TargetNode", *node.TargetNode)
-			//fmt.Println("TargetNode", *node.TargetNode)
+			//fmt.Println("NewNode", *node.NewNode)
 			done := false
 			//log.Println(node.TargetNode.NodeId, uint64(s.nodeId))
 			if node.TargetNode.NodeId == uint64(s.nodeId)-3000 {
@@ -430,9 +430,13 @@ func (s *nodesServer) serverReallocKeys(nodename, bucketName string, portno uint
 				}
 
 				if !done {
-
+					fmt.Println(s.ring.Nodes.Length / config.NUM_VIRTUAL_NODES)
+					a := config.REPLICATION_FACTOR - 1
+					if s.ring.Nodes.Length/config.NUM_VIRTUAL_NODES-1 < config.REPLICATION_FACTOR-1 {
+						a = s.ring.Nodes.Length/config.NUM_VIRTUAL_NODES - 1
+					}
 					hashnode := node.NewNode
-					for i := 0; i < config.REPLICATION_FACTOR-1; i++ {
+					for i := 0; i < a; i++ {
 						if hashnode.Prev != nil {
 							hashnode = hashnode.Prev
 						} else {
