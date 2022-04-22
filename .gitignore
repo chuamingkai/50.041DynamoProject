@@ -3,4 +3,3 @@ store/
 *.db
 *.bak
 .DS_Store
-.env

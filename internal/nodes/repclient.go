@@ -64,7 +64,8 @@ func (s *nodesServer) doPutReplica(bucketName, key string, data []byte, senderId
 
 		incomingRepObject.CreatedOn = existingRepObject.CreatedOn
 		incomingRepObject.LastModifiedOn = currentTime
-		incomingRepObject.VC = vectorclock.MergeClocks(existingRepObject.VC, incomingRepObject.VC)
+		mergedClock := vectorclock.MergeClocks(existingRepObject.VC, incomingRepObject.VC)
+		incomingRepObject.VC = vectorclock.UpdateRecv(nodename, mergedClock)
 
 	} else {
 		incomingRepObject.CreatedOn = currentTime
