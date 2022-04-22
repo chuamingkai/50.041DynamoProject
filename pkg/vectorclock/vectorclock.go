@@ -48,3 +48,13 @@ func IsConcurrentWith(clock1Map, clock2Map map[string]uint64) bool {
 
 	return clock1.Compare(clock2, vclock.Concurrent)
 }
+
+// Merge clock 2 into clock 1
+func MergeClocks(clock1Map, clock2Map map[string]uint64) map[string]uint64 {
+	clock1 := vclock.New().CopyFromMap(clock1Map)
+	clock2 := vclock.New().CopyFromMap(clock2Map)
+
+	clock1.Merge(clock2)
+
+	return clock1.GetMap()
+}

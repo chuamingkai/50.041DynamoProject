@@ -69,9 +69,12 @@ func (s *nodesServer) serverGetReplicas(bucketName, key string) (*GetRepResult, 
 			var getRepRes *pb.GetRepResponse
 			var err error
 
-			log.Printf("Getting replica from node %v.\n", vn.NodeId)
-			if vn.NodeId == uint64(s.nodeId) {
+			peerId := vn.NodeId
+
+			log.Printf("Getting replica from node %v.\n", peerId)
+			if peerId == uint64(s.internalAddr) {
 				getRepRes, err = s.GetReplica(ctxRep, &getRepReq)
+				peerId = uint64(s.nodeId)
 			} else {
 				peerAddr := fmt.Sprintf("localhost:%v", vn.NodeId)
 				dialOptions := grpc.WithTransportCredentials(insecure.NewCredentials())
@@ -92,13 +95,13 @@ func (s *nodesServer) serverGetReplicas(bucketName, key string) (*GetRepResult, 
 
 			if err != nil {
 				notifyChan <- GetRepMessage{
-					peerId:   vn.NodeId,
+					peerId:   peerId,
 					err:      err,
 					repBytes: nil,
 				}
 			} else {
 				notifyChan <- GetRepMessage{
-					peerId:   vn.NodeId,
+					peerId:   peerId,
 					err:      nil,
 					repBytes: getRepRes.Data,
 				}
@@ -138,13 +141,9 @@ func (s *nodesServer) serverGetReplicas(bucketName, key string) (*GetRepResult, 
 		}
 	}
 
-	log.Printf("Finished getting replicas for key %v, received %v successful response(s).\n", key, responseCount)
+	log.Printf("Finished getting replicas for key %v, received %v successful response(s).\n", key, len(replicas))
 
 	if responseCount == 0 { // All servers in preference list are dead
-		return &GetRepResult{
-			SuccessStatus: UNSUCCESSFUL,
-		}, errors.New("all servers in preference list are down")
-	} else if responseCount < config.MIN_READS { // Not enough replicas received -> partially successful read operation
 		return &GetRepResult{
 			SuccessStatus: UNSUCCESSFUL,
 		}, errors.New("all servers in preference list are down")
@@ -153,6 +152,10 @@ func (s *nodesServer) serverGetReplicas(bucketName, key string) (*GetRepResult, 
 			Replicas:      replicas,
 			SuccessStatus: UNSUCCESSFUL,
 		}, nil
+	} else if len(replicas) < config.MIN_READS { // Not enough replicas received -> partially successful read operation
+		return &GetRepResult{
+			SuccessStatus: UNSUCCESSFUL,
+		}, errors.New("insufficient replicas recieved")
 	} else {
 		conflictingReps := getConflictingReps(replicas)
 		return &GetRepResult{
@@ -408,90 +411,85 @@ func (s *nodesServer) sendHint(targetNode string, receiverAddr uint64, hint mode
 }
 
 /*addnode and realloc keys to the respective nodes*/
-func (s *nodesServer) serverReallocKeys(nodename, bucketName string, portno uint64) bool {
-	var nodes []uint64
+func (s *nodesServer) serverReallocKeys(nodename string, portno uint64) bool {
+	// var nodes []uint64
 	notice := s.ring.AddNode(nodename, portno)
 	log.Printf("Node %v added to ring.\n", nodename)
 	log.Println(s.ring.Nodes.TraverseAndPrint())
 	log.Println(notice)
 	if len(notice) > 0 {
-		//delete := make([]models.HintedObject, 0)
 		for _, node := range notice {
-			//fmt.Println("TargetNode", *node.TargetNode)
-			//fmt.Println("TargetNode", *node.TargetNode)
-			done := false
-			//log.Println(node.TargetNode.NodeId, uint64(s.nodeId))
+			// done := false
 			if node.TargetNode.NodeId == uint64(s.nodeId)-3000 {
-				for _, v := range nodes {
-					if v == node.NewNode.NodeId {
-						done = true
-						break
+				// for _, v := range nodes {
+				// 	if v == node.NewNode.NodeId {
+				// 		done = true
+				// 		break
+				// 	}
+				// }
+
+				// if !done {
+
+				//hashnode := node.NewNode
+				//for i := 0; i < config.REPLICATION_FACTOR-1; i++ {
+				//	hashnode = hashnode.Prev
+				//}
+
+				hashnode := node.NewNode
+				for i := 0; i < config.REPLICATION_FACTOR-1; i++ {
+					if hashnode.Prev != nil {
+						hashnode = hashnode.Prev
+					} else {
+						for hashnode.Next != nil {
+							hashnode = hashnode.Next
+						}
 					}
 				}
 
-				if !done {
-
-					hashnode := node.NewNode
-					for i := 0; i < config.REPLICATION_FACTOR-1; i++ {
-						if hashnode.Prev != nil {
-							hashnode = hashnode.Prev
-						} else {
-							for hashnode.Next != nil {
-								hashnode = hashnode.Next
-							}
+				bucketNames, errb := s.boltDB.GetAllBuckets()
+				if errb == nil {
+					for _, bucketname := range bucketNames {
+						if bucketname == "hints" {
+							continue
 						}
-					}
-					bucketNames, errb := s.boltDB.GetAllBuckets()
-					if errb == nil {
-						for _, bucketname := range bucketNames {
-							if bucketname == "hints" {
-								continue
-							}
-							log.Printf("reallocating keys to %v from %s bucket \n", node.NewNode.NodeId, bucketname)
-							err := s.boltDB.Iterate(bucketname, func(k, v []byte) error {
+						log.Printf("reallocating keys to %v from %s bucket \n", node.NewNode.NodeId, bucketname)
+						err := s.boltDB.Iterate(bucketname, func(k, v []byte) error {
 
-								//destinationNodename := string(k[:])
-								targetPort := node.NewNode.NodeId
-								//fmt.Println(string(k[:]))
-								//fmt.Printf("TargetPort %v NodeHash %v KeyHash%v\n", targetPort, node.NewNode.Hash, consistenthash.Hash(string(k[:])))
-								var hintedDatas []models.HintedObject
-								var reallocObj models.Object
-								/*transfer keys including responsible replicas*/
-								if hashnode.Hash.Cmp(consistenthash.Hash(string(k[:]))) <= 0 {
+							targetPort := node.NewNode.NodeId
+							var hintedDatas []models.HintedObject
+							var reallocObj models.Object
+							/*transfer keys including responsible replicas*/
+							if hashnode.Hash.Cmp(consistenthash.Hash(string(k[:]))) <= 0 {
 
-									if err := json.Unmarshal(v, &reallocObj); err != nil {
-										//fmt.Println(reallocObj)
-
-										return err
-									} else {
-										//fmt.Println(reallocObj)
-										hintedDatas = append(hintedDatas, models.HintedObject{BucketName: bucketname, Data: reallocObj})
-										//fmt.Println(hintedDatas)
-									}
-									/*delete keys that are now responsible by new node*/
-									//if node.NewNode.Hash.Cmp(consistenthash.Hash(string(k[:]))) <= 0 {
-									//	delete = append(delete, models.HintedObject{BucketName: bucketname, Data: reallocObj})
-
-									//}
-
-								}
-
-								if s.clientPutMultiple(targetPort, hintedDatas) {
-									//delete = append(delete, reallocObj.Key)
-
+								if err := json.Unmarshal(v, &reallocObj); err != nil {
+									return err
 								} else {
-									log.Printf("Reallocation error")
+									hintedDatas = append(hintedDatas, models.HintedObject{BucketName: bucketname, Data: reallocObj})
 								}
-								return nil
+								/*delete keys that are now responsible by new node*/
+								//if node.NewNode.Hash.Cmp(consistenthash.Hash(string(k[:]))) <= 0 {
+								//	delete = append(delete, models.HintedObject{BucketName: bucketname, Data: reallocObj})
 
-							})
-							if err != nil {
-								log.Printf("Reallocation error: %s\n", err)
+								//}
 
 							}
-							nodes = append(nodes, node.NewNode.NodeId)
+
+							if s.clientPutMultiple(targetPort, hintedDatas) {
+								//delete = append(delete, reallocObj.Key)
+
+							} else {
+								log.Printf("Reallocation error")
+							}
+							return nil
+
+						})
+						if err != nil {
+							log.Printf("Reallocation error: %s\n", err)
+
 						}
+						// nodes = append(nodes, node.NewNode.NodeId)
 					}
+					// }
 				}
 			}
 
@@ -514,8 +512,6 @@ func (s *nodesServer) serverReallocKeys(nodename, bucketName string, portno uint
 }
 
 func (s *nodesServer) delnodeReallocKeys(nodename string) {
-	var nodes []uint64
-
 	for _, l := range s.ring.NodeMap[fmt.Sprint(s.nodeId)].VirtualNodes {
 		hashnode := l
 		if hashnode.Prev != nil {
@@ -527,76 +523,64 @@ func (s *nodesServer) delnodeReallocKeys(nodename string) {
 		}
 
 		targetPort := hashnode.NodeId
-		done := false
-		for _, v := range nodes {
-			if v == hashnode.NodeId {
-				done = true
-				break
-			}
-		}
-		if !done {
 
-			bucketNames, errb := s.boltDB.GetAllBuckets()
-			if errb == nil {
-				for _, bucketname := range bucketNames {
-					if bucketname == "hints" {
-						continue
-					}
-					log.Printf("reallocating keys from %s bucket to %v\n", bucketname, hashnode.NodeId)
+		bucketNames, errb := s.boltDB.GetAllBuckets()
+		if errb == nil {
+			for _, bucketname := range bucketNames {
+				if bucketname == "hints" {
+					continue
+				}
+				log.Printf("reallocating keys from %s bucket to %v\n", bucketname, hashnode.NodeId)
 
-					err := s.boltDB.Iterate(bucketname, func(k, v []byte) error {
+				err := s.boltDB.Iterate(bucketname, func(k, v []byte) error {
 
-						//destinationNodename := string(k[:])
-						//targetPort := n.NodeId
-						//fmt.Println("port", targetPort)
-						//fmt.Println(string(k[:]))
-						//fmt.Printf("TargetPort %v NodeHash %v KeyHash%v\n", targetPort, node.NewNode.Hash, consistenthash.Hash(string(k[:])))
-						var hintedDatas []models.HintedObject
-						var reallocObj models.Object
-						/*transfer keys including responsible replicas*/
-						//fmt.Println(hashnode.NodeId)
-						//fmt.Println(hashnode.Hash)
-						//fmt.Println(consistenthash.Hash(string(k[:])))
-						if l.Hash.Cmp(consistenthash.Hash(string(k[:]))) <= 0 {
+					//destinationNodename := string(k[:])
+					//targetPort := n.NodeId
+					//fmt.Println("port", targetPort)
+					//fmt.Println(string(k[:]))
+					//fmt.Printf("TargetPort %v NodeHash %v KeyHash%v\n", targetPort, node.NewNode.Hash, consistenthash.Hash(string(k[:])))
+					var hintedDatas []models.HintedObject
+					var reallocObj models.Object
+					/*transfer keys including responsible replicas*/
+					//fmt.Println(hashnode.NodeId)
+					//fmt.Println(hashnode.Hash)
+					//fmt.Println(consistenthash.Hash(string(k[:])))
+					if l.Hash.Cmp(consistenthash.Hash(string(k[:]))) <= 0 {
 
-							if err := json.Unmarshal(v, &reallocObj); err != nil {
-								//fmt.Println(reallocObj)
+						if err := json.Unmarshal(v, &reallocObj); err != nil {
+							//fmt.Println(reallocObj)
 
-								return err
-							} else {
-								//fmt.Println(reallocObj)
-								hintedDatas = append(hintedDatas, models.HintedObject{BucketName: bucketname, Data: reallocObj})
-								//fmt.Println(hintedDatas)
-							}
-							/*delete keys that are now responsible by new node*/
-							//if node.NewNode.Hash.Cmp(consistenthash.Hash(string(k[:]))) <= 0 {
-							//	delete = append(delete, models.HintedObject{BucketName: bucketname, Data: reallocObj})
-
-							//}
-
-						}
-
-						if s.clientPutMultiple(targetPort, hintedDatas) {
-							//delete = append(delete, reallocObj.Key)
-
+							return err
 						} else {
-							log.Printf("Reallocation error")
+							//fmt.Println(reallocObj)
+							hintedDatas = append(hintedDatas, models.HintedObject{BucketName: bucketname, Data: reallocObj})
+							//fmt.Println(hintedDatas)
 						}
-						return nil
+						/*delete keys that are now responsible by new node*/
+						//if node.NewNode.Hash.Cmp(consistenthash.Hash(string(k[:]))) <= 0 {
+						//	delete = append(delete, models.HintedObject{BucketName: bucketname, Data: reallocObj})
 
-					})
-					if err != nil {
-						log.Printf("Reallocation error: %s\n", err)
+						//}
 
 					}
+
+					if s.clientPutMultiple(targetPort, hintedDatas) {
+						//delete = append(delete, reallocObj.Key)
+
+					} else {
+						log.Printf("Reallocation error")
+					}
+					return nil
+
+				})
+				if err != nil {
+					log.Printf("Reallocation error: %s\n", err)
+
 				}
 			}
-			nodes = append(nodes, hashnode.NodeId)
 		}
 
 	}
-
-	fmt.Println("removing", nodename)
+	log.Println("removing", nodename)
 	s.ring.RemoveNode(nodename)
-
 }

@@ -229,7 +229,6 @@ func (r *Ring) GetPreferenceList(key string) []VirtualNode {
 func (r *Ring) IsNodeResponsibleForKey(key string, id uint64) bool {
 	prefList := r.GetPreferenceList(key)
 	for _, n := range prefList {
-		fmt.Println(n)
 		if n.NodeId == id {
 			return true
 		}

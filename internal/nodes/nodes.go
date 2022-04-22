@@ -207,10 +207,10 @@ func (s *nodesServer) updateAddNode(w http.ResponseWriter, r *http.Request) {
 
 	if !exist {
 		//s.ring.AddNode(nodenameString, grpcAddress)
-		s.serverReallocKeys(nodenameString, config.MAIN_BUCKETNAME, grpcAddress)
+		s.serverReallocKeys(nodenameString, grpcAddress)
 
 		successMessage := fmt.Sprintf("Node %v added to ring.", newnode.NodeName)
-		log.Println(successMessage)
+		// log.Println(successMessage)
 		log.Println(s.ring.Nodes.TraverseAndPrint())
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(successMessage)
@@ -258,45 +258,6 @@ func (s *nodesServer) updateDelNode(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(successMessage)
 	} else {
 		http.Error(w, "Node doesn't exist!", http.StatusBadRequest)
-	}
-}
-
-// Get all objects inside a bucket
-func (s *nodesServer) doGetAllBucketObjects(w http.ResponseWriter, r *http.Request) {
-	pathVars := mux.Vars(r)
-	var ok bool
-	var bucketName string
-	if bucketName, ok = pathVars["bucketName"]; !ok {
-		http.Error(w, "Missing bucket name", http.StatusBadRequest)
-		return
-	}
-
-	bucketObjectsBytes, err := s.boltDB.GetAllObjects(bucketName)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	var bucketObjects []models.Object
-	for _, objBytes := range bucketObjectsBytes {
-		var obj models.Object
-		if err := json.Unmarshal(objBytes, &obj); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		bucketObjects = append(bucketObjects, obj)
-	}
-
-	json.NewEncoder(w).Encode(bucketObjects)
-}
-
-// Get all buckets inside the database
-func (s *nodesServer) getAllBuckets(w http.ResponseWriter, r *http.Request) {
-	bucketNames, err := s.boltDB.GetAllBuckets()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	} else {
-		json.NewEncoder(w).Encode(bucketNames)
 	}
 }
 
@@ -385,6 +346,9 @@ func (s *nodesServer) RunNodeServer() (*http.Server, error) {
 	// Bucket creation
 	myRouter.HandleFunc("/db/{bucketName}", s.doCreateBucket).Methods("POST")
 
+	// Delete key from bucket
+	myRouter.HandleFunc("/db/{bucketName}/{key}", s.deleteKey).Methods("PUT")
+
 	server := http.Server{
 		Addr:    fmt.Sprintf(":%v", s.nodeId), //:{port}
 		Handler: myRouter,
@@ -408,12 +372,7 @@ func NewNodeServer(port, internalAddr int64, newRing *consistenthash.Ring) *node
 			log.Fatal("Error creating hint bucket:", err)
 		}
 	}
-	/*if !db.BucketExists(config.MAIN_BUCKETNAME) {
-		err = db.CreateBucket(config.MAIN_BUCKETNAME)
-		if err != nil {
-			log.Fatal("Error creating main bucket:", err)
-		}
-	}*/
+
 	return &nodesServer{
 		nodeId:       port,
 		internalAddr: internalAddr,

@@ -37,7 +37,6 @@ func (s *nodesServer) doPutReplica(bucketName, key string, data []byte, senderId
 		if err := s.boltDB.CreateBucket(bucketName); err != nil {
 			return err
 		}
-
 	}
 
 	var incomingRepObject models.Object
@@ -65,25 +64,21 @@ func (s *nodesServer) doPutReplica(bucketName, key string, data []byte, senderId
 
 		incomingRepObject.CreatedOn = existingRepObject.CreatedOn
 		incomingRepObject.LastModifiedOn = currentTime
-		incomingRepObject.VC = vectorclock.UpdateRecv(nodename, existingRepObject.VC)
+		mergedClock := vectorclock.MergeClocks(existingRepObject.VC, incomingRepObject.VC)
+		incomingRepObject.VC = vectorclock.UpdateRecv(nodename, mergedClock)
 
-		incomingRepBytes, err := json.Marshal(incomingRepObject)
-		if err != nil {
-			return err
-		}
-
-		return s.boltDB.Put(bucketName, key, incomingRepBytes)
 	} else {
 		incomingRepObject.CreatedOn = currentTime
 		incomingRepObject.LastModifiedOn = currentTime
 		incomingRepObject.VC = vectorclock.UpdateRecv(nodename, map[string]uint64{nodename: 0})
-
-		incomingRepBytes, err := json.Marshal(incomingRepObject)
-		if err != nil {
-			return err
-		}
-		return s.boltDB.Put(bucketName, key, incomingRepBytes)
 	}
+
+	incomingRepBytes, err := json.Marshal(incomingRepObject)
+	if err != nil {
+		return err
+	}
+
+	return s.boltDB.Put(bucketName, key, incomingRepBytes)
 }
 
 // GetReplica issued from server responsible for the get operation
@@ -92,10 +87,13 @@ func (s *nodesServer) GetReplica(ctx context.Context, req *pb.GetRepRequest) (*p
 
 	replica, found, err := s.doGetReplica(req.BucketName, req.Key)
 	if err != nil {
+		log.Printf("Error getting replica for key {%v}: %s\n", req.Key, err.Error())
 		return nil, err
 	} else if !found {
+		log.Printf("Key {%v} replica not found\n", req.Key)
 		return &pb.GetRepResponse{Data: nil}, nil
 	} else {
+		log.Printf("Successfully found replica for key {%v}\n", req.Key)
 		var replicaBuffer bytes.Buffer
 		err = gob.NewEncoder(&replicaBuffer).Encode(replica)
 		if err != nil {
@@ -177,8 +175,3 @@ func (s *nodesServer) putInHintBucket(origNode string, origBucket string, hint m
 	}
 	return nil
 }
-
-// TODO: Implement comparison of vector clocks
-// func compareVectorClocks(currentVC, incomingVC map[string]uint64) bool {
-// 	return true
-// }
