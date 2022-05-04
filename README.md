@@ -22,7 +22,7 @@ HTTP endpoints:
     "NodeName": NODE_NAME
 }
 ```
-* /confirmdel (POST) - Confirm node's request to exit (and trigger reallocation of keys) ```
+* /confirmdel (POST) - Confirm node's request to exit (and trigger reallocation of keys) 
 * /data (POST) - Write data to a bucket. Request body:
 ```
 {
@@ -40,10 +40,10 @@ HTTP endpoints:
 	"Key": KEY
 }
 ```
-* /db (GET) - View all existing bucket names. ``` 
-``` * /db/:bucketName (POST) - Create new bucket if it does not exist. ```
-``` * /db/:bucketName (GET) - View all key-value pairs in bucket. ```
-``` * /db/:bucketName/:key (POST) - Delete existing key in Bucket. ```
+* /db (GET) - View all existing bucket names. 
+* /db/:bucketName (POST) - Create new bucket if it does not exist. 
+* /db/:bucketName (GET) - View all key-value pairs in bucket. 
+* /db/:bucketName/:key (POST) - Delete existing key in Bucket. 
 
 ### Node Manager
 The node manager sits in front of the Dynamo nodes and runs a HTTP server. It informs clients of the node that it should contact for a certain key. The node manager also handles ring membership. Whenever a node wants to enter or exit the ring, it informs the node manager and the node manager will broadcast this information to the nodes and inform the nodes involved to do redistribution of keys. 
