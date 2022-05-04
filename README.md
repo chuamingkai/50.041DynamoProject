@@ -41,14 +41,30 @@ HTTP endpoints:
 }
 ```
 * /db (GET) - View all existing bucket names. 
-* /db/:bucketName (POST) - Create new bucket if it does not exist. 
-* /db/:bucketName (GET) - View all key-value pairs in bucket. 
-* /db/:bucketName/:key (POST) - Delete existing key in Bucket. 
+* /db/{bucketName} (POST) - Create new bucket if it does not exist. 
+* /db/{bucketName} (GET) - View all key-value pairs in bucket. 
+* /db/{bucketName}/{key} (POST) - Delete existing key in Bucket. 
 
 ### Node Manager
 The node manager sits in front of the Dynamo nodes and runs a HTTP server. It informs clients of the node that it should contact for a certain key. The node manager also handles ring membership. Whenever a node wants to enter or exit the ring, it informs the node manager and the node manager will broadcast this information to the nodes and inform the nodes involved to do redistribution of keys. 
 
 The node manager is assigned a fixed port number of 8000.
+
+HTTP endpoints:
+* /addNode (POST) - Add new node to its own ring and notifies other nodes of new member by posting to node’s HTTP server /addnode path. Request body:
+```
+{
+    "NodeName": NODE_NAME
+}
+```
+* /delNode (POST) - Remove node from its own ring, confirms removal to node's HTTP server /confirmdel path and notifies other nodes by posting to node's HTTP server /delnode path. 
+* /getKey (GET) - Return client node responsible for key. Request body:
+```
+{
+    "Key": KEY
+}
+```
+
 
 ### Client (Front-End)
 The client first contacts the node manager to find out which node stores the key it is interested in. The client then contacts this node directly with its read request. If it receives multiple versions of the object, the client is responsible for merging the vector clock before writing the new value.
