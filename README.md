@@ -57,7 +57,12 @@ HTTP endpoints:
     "NodeName": NODE_NAME
 }
 ```
-* /delNode (POST) - Remove node from its own ring, confirms removal to node's HTTP server /confirmdel path and notifies other nodes by posting to node's HTTP server /delnode path. 
+* /delNode (POST) - Remove node from its own ring, confirms removal to node's HTTP server /confirmdel path and notifies other nodes by posting to node's HTTP server /delnode path. Request body:
+```
+{
+    "NodeName": NODE_NAME
+}
+```
 * /getKey (GET) - Return client node responsible for key. Request body:
 ```
 {
